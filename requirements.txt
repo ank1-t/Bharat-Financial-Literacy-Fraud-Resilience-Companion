@@ -1,0 +1,33 @@
+# ─────────────────────────────────────────────────────────────
+#  Bharat Financial Literacy & Fraud Resilience Companion
+#  Python Dependencies
+#  Install: pip install -r requirements.txt
+# ─────────────────────────────────────────────────────────────
+
+# ── Web UI ────────────────────────────────────────────────────
+streamlit>=1.35.0
+
+# ── Google Gemini LLM + Embeddings ────────────────────────────
+google-generativeai>=0.7.0
+
+# ── Vector Database (in-memory, zero setup) ───────────────────
+chromadb>=0.5.0
+
+# ── PDF Parsing ───────────────────────────────────────────────
+pymupdf>=1.24.0          # fitz — fast PDF text extraction with page numbers
+
+# ── YouTube Transcript Fetching ────────────────────────────────
+youtube-transcript-api>=0.6.2
+
+# ── Environment Management ────────────────────────────────────
+python-dotenv>=1.0.0
+
+# ── HTTP Requests ─────────────────────────────────────────────
+requests>=2.31.0
+
+# ── Numeric / Utility ─────────────────────────────────────────
+numpy>=1.26.0
+
+# ── Testing ───────────────────────────────────────────────────
+pytest>=8.2.0
+pytest-mock>=3.14.0

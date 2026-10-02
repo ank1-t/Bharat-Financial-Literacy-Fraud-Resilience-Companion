@@ -1,0 +1,14 @@
+[theme]
+primaryColor        = "#FF6B00"   # Saffron — India flag accent
+backgroundColor     = "#0D1117"   # Deep navy-black
+secondaryBackgroundColor = "#161B22"  # Card background
+textColor           = "#E6EDF3"   # Soft white
+font                = "sans serif"
+
+[server]
+headless            = true
+enableCORS          = false
+port                = 8501
+
+[browser]
+gatherUsageStats    = false

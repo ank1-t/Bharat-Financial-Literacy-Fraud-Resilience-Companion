@@ -36,17 +36,25 @@ def render_answer_card(answer: str, is_refusal: bool = False):
     """
     Render the LLM answer in a styled card.
     Refusal answers get a red-accented card; normal answers get green.
-    Also extracts and displays citation badges.
+    Uses native st.markdown for proper formatting (lists, bolding, headings).
     """
-    card_class = "refusal-card" if is_refusal else "answer-card"
-    st.markdown(f"""
-    <div class="{card_class}">
-      <div class="card-header">
-        {'🚫 Safety Guardrail Active' if is_refusal else '💡 Saarthi का जवाब | Saarthi\'s Answer'}
-      </div>
-      <div class="answer-text">{answer.replace(chr(10), '<br>')}</div>
-    </div>
-    """, unsafe_allow_html=True)
+    border_color = "rgba(248, 81, 73, 0.4)" if is_refusal else "rgba(63, 185, 80, 0.4)"
+    bg_gradient = (
+        "linear-gradient(135deg, rgba(31, 13, 13, 0.8) 0%, rgba(36, 21, 21, 0.8) 100%)"
+        if is_refusal else
+        "linear-gradient(135deg, rgba(13, 31, 13, 0.8) 0%, rgba(15, 36, 21, 0.8) 100%)"
+    )
+    header_text = "🚫 Safety Guardrail Active" if is_refusal else "💡 Saarthi का जवाब | Saarthi's Answer"
+    header_color = "#F85149" if is_refusal else "#3FB950"
+
+    st.markdown(
+        f'<div style="background:{bg_gradient}; border:1px solid {border_color}; border-left:4px solid {header_color}; '
+        f'border-radius:12px; padding:16px 20px 8px 20px; margin:16px 0;">'
+        f'<div style="font-size:13px; font-weight:600; text-transform:uppercase; letter-spacing:1px; color:{header_color}; margin-bottom:12px;">{header_text}</div>',
+        unsafe_allow_html=True
+    )
+    st.markdown(answer)
+    st.markdown('</div>', unsafe_allow_html=True)
 
     # Render citation badges
     if not is_refusal:
@@ -60,6 +68,7 @@ def render_answer_card(answer: str, is_refusal: bool = False):
                     badges_html += f'<span class="citation-badge citation-video">🎬 {cit}</span>'
             badges_html += '</div>'
             st.markdown(badges_html, unsafe_allow_html=True)
+
 
 
 def render_kb_status(chunk_count: int):
@@ -153,8 +162,10 @@ def render_safety_footer():
     """, unsafe_allow_html=True)
 
 
-def render_example_questions(lang_code: str):
-    """Render clickable example questions to guide first-time users."""
+def render_example_questions(lang_code: str) -> str | None:
+    """Render clickable example questions to guide first-time users.
+    Returns the clicked question string if an example button was pressed, else None.
+    """
     is_hindi = lang_code.startswith("hi")
 
     if is_hindi:
@@ -174,8 +185,16 @@ def render_example_questions(lang_code: str):
 
     st.markdown("**💬 Try asking:**" if not is_hindi else "**💬 पूछकर देखें:**")
     cols = st.columns(2)
+    clicked_query = None
     for i, example in enumerate(examples):
         with cols[i % 2]:
-            if st.button(f"'{example}'", key=f"ex_{i}", use_container_width=True):
-                st.session_state["pending_query"] = example
-                st.rerun()
+            if st.button(
+                f"'{example}'",
+                key=f"ex_{i}",
+                use_container_width=True,
+            ):
+                clicked_query = example
+
+    return clicked_query
+
+

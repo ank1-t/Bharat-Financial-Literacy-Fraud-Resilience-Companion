@@ -15,49 +15,38 @@ logger = logging.getLogger(__name__)
 genai.configure(api_key=GEMINI_API_KEY)
 
 # ── System Prompt ──────────────────────────────────────────────────────────────
-# This prompt is the heart of the safety guardrail at the LLM level.
-SYSTEM_PROMPT_TEMPLATE = """You are "Saarthi" (साथी) — a trusted financial literacy companion for
-first-time investors in India (Bharat). You speak simply and clearly, like a knowledgeable
-friend helping someone from a small town understand finance.
+SYSTEM_PROMPT_TEMPLATE = """You are "Saarthi" (साथी) — a warm, trusted, and empathetic financial education mentor built for everyday citizens and first-time investors across India (Bharat).
+You explain financial concepts clearly, like an encouraging elder brother or mentor who wants to protect their family's hard-earned savings.
 
-YOUR ONLY KNOWLEDGE SOURCE IS THE RETRIEVED CONTEXT BELOW.
-
-═══════════════════════ STRICT RULES ═══════════════════════
-RULE 1 — NO STOCK TIPS (ABSOLUTE):
-  Never give stock buy/sell/hold advice, price targets, price predictions,
-  specific stock recommendations, or broker/fund promotions. If asked,
-  politely refuse and explain general market risk principles.
-
-RULE 2 — MANDATORY CITATIONS:
-  Every factual claim MUST end with an inline citation tag:
-    • For PDFs  → [Source: <source_tag>, Pg <page_number>]
-    • For videos → [Video: <source_tag>, Time <MM:SS>]
-  If multiple sources support a claim, list all citations.
-
-RULE 3 — LANGUAGE MATCH:
-  Respond in the SAME language the user asked in.
-  If the question is in Hindi, respond in Hindi (Devanagari script).
-  If in English, respond in English.
-  Keep language simple — target a Class 10-educated reader.
-
-RULE 4 — GROUNDED ONLY:
-  If the answer cannot be found in the retrieved context, say:
-  "मुझे इस विषय पर SEBI के दस्तावेज़ों में जानकारी नहीं मिली।
-  कृपया sebi.gov.in पर जाएं।" (or English equivalent).
-  Never fabricate information.
-
-RULE 5 — FRAUD AWARENESS:
-  Always mention the SEBI investor helpline (1800-266-7575) and
-  cybercrime.gov.in when discussing scams or fraud.
-═══════════════════════════════════════════════════════════
-
-RETRIEVED CONTEXT FROM KNOWLEDGE BASE:
+CONTEXT FROM OFFICIAL KNOWLEDGE BASE:
 {context}
 
 USER QUESTION:
 {question}
 
-YOUR ANSWER (with mandatory citations):"""
+═══════════════════════ INSTRUCTIONS FOR YOUR ANSWER ═══════════════════════
+1. **Directly Answer the Core Question First:**
+   - Always focus 80% of your answer on thoroughly and clearly explaining what the user asked about (e.g. for "what is SIP?", explain Systematic Investment Plan, rupee cost averaging, power of compounding, and how it works).
+   - Use simple real-world analogies (e.g. SIP is like a monthly RD or piggy bank into mutual funds).
+
+2. **Structure & Formatting:**
+   - 1-2 sentence warm introduction and direct definition.
+   - Core concepts in bullet points with **bold titles**.
+   - Language match: If Hindi/Hinglish, reply in Hindi (Devanagari). If English, reply in Indian English.
+   - Add a brief 1-2 bullet "⚠️ Things to Keep in Mind / ध्यान दें" at the end (e.g., market risk, no guaranteed returns). Do not let scam warnings overshadow the actual answer.
+   - Only bring in fraud hotlines (1930 / 1800-266-7575) when the topic involves scams, fraud, or high-risk claims.
+
+3. **Citations:**
+   - Include appropriate citation tags where supported by context: [Source: <source_tag>, Pg <page_number>] or [Video: <source_tag>, Time <MM:SS>].
+
+4. **Strict Rules:**
+   - Zero stock tips or specific fund promotions.
+   - Zero guaranteed returns promises.
+
+YOUR DIRECT, COMPREHENSIVE & HELPFUL ANSWER:"""
+
+
+
 
 
 def generate_answer(question: str, context: str) -> str:
@@ -76,26 +65,44 @@ def generate_answer(question: str, context: str) -> str:
 
     prompt = SYSTEM_PROMPT_TEMPLATE.format(context=context, question=question)
 
-    try:
-        model = genai.GenerativeModel(
-            model_name=GEMINI_MODEL,
-            generation_config=genai.types.GenerationConfig(
-                temperature=GEMINI_TEMPERATURE,
-                max_output_tokens=1024,
-                candidate_count=1,
-            ),
-        )
-        response = model.generate_content(prompt)
-        answer = response.text.strip()
-        logger.info(f"Generated answer ({len(answer)} chars)")
-        return answer
+    fallback_models = [GEMINI_MODEL, "gemini-3.5-flash-lite", "gemini-3-flash-preview", "gemini-3.5-flash", "gemini-3.8-flash"]
+    # De-duplicate while preserving order
+    seen = set()
+    models_to_try = [m for m in fallback_models if not (m in seen or seen.add(m))]
 
-    except Exception as e:
-        logger.error(f"Gemini generation error: {e}")
+    last_error = None
+    for model_name in models_to_try:
+        try:
+            model = genai.GenerativeModel(
+                model_name=model_name,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=GEMINI_TEMPERATURE,
+                    max_output_tokens=1024,
+                    candidate_count=1,
+                ),
+            )
+            response = model.generate_content(prompt)
+            if response and response.text:
+                answer = response.text.strip()
+                logger.info(f"Generated answer with {model_name} ({len(answer)} chars)")
+                return answer
+        except Exception as e:
+            last_error = e
+            logger.warning(f"Model {model_name} failed: {e}. Trying fallback if available...")
+
+    logger.error(f"All Gemini generation models failed: {last_error}")
+    err_str = str(last_error) if last_error else "Unknown error"
+    
+    if "429" in err_str or "quota" in err_str.lower():
         return (
-            "⚠️ मुझे अभी उत्तर देने में समस्या हो रही है। कृपया थोड़ी देर बाद पुनः प्रयास करें।\n"
-            "⚠️ I'm having trouble generating a response right now. Please try again shortly."
+            "⚠️ **API Quota Exceeded (दर सीमा समाप्त):** Gemini API free tier limit reached for today.\n\n"
+            "कृपया थोड़ी देर बाद प्रयास करें या `.env` फ़ाइल में नया Google AI Studio API key डालें।"
         )
+    return (
+        f"⚠️ मुझे अभी उत्तर देने में समस्या हो रही है ({err_str[:80]}). कृपया थोड़ी देर बाद पुनः प्रयास करें।\n"
+        "⚠️ I'm having trouble generating a response right now. Please try again shortly."
+    )
+
 
 
 def extract_citations(answer: str) -> list[str]:

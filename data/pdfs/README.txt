@@ -11,5 +11,4 @@
 #   https://www.sebi.gov.in/investor-corner.html
 #   https://www.sebi.gov.in/investor/publications.html
 #
-# For the hackathon demo, download these PDFs and place them here.
-# They are committed to Git for offline demo reliability.
+# These PDFs are committed to Git for offline reliability.

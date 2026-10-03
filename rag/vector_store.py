@@ -5,7 +5,7 @@ ChromaDB in-memory vector store manager.
 Handles collection creation, document upsert, and query.
 
 Using in-memory client means the index is rebuilt each time the app starts
-(acceptable for hackathon demo — fast with ~5 small PDFs + 2 videos).
+(ideal for lightweight in-memory deployment — fast with ~5 small PDFs + 2 videos).
 """
 
 import logging

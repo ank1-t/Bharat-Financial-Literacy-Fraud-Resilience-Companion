@@ -6,7 +6,7 @@
 
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://python.org)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.35+-red.svg)](https://streamlit.io)
-[![Gemini 1.5 Flash](https://img.shields.io/badge/Gemini-1.5%20Flash-orange.svg)](https://ai.google.dev)
+[![Gemini](https://img.shields.io/badge/Gemini-AI-orange.svg)](https://ai.google.dev)
 [![ChromaDB](https://img.shields.io/badge/ChromaDB-in--memory-green.svg)](https://www.trychroma.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -28,16 +28,6 @@ A **regional voice-first AI companion** that helps first-time and Tier-2/3 inves
 
 ---
 
-## 🏆 Hackathon Context
-
-| Hackathon | Track | Alignment |
-|-----------|-------|-----------|
-| **IIT BHU Sangyan** | Track C: Investor Education for Bharat | SEBI RAG + voice-first + Bharat accessibility |
-| **IIT BHU Sangyan** | Track D: Behavioural Resilience | Adaptive fraud quiz + psychological scam framing |
-| **IIT Mandi Multimodal AI** | Track D: Personalized Tutoring & Adaptive Learning | Multimodal RAG (PDF + video) + adaptive difficulty |
-
----
-
 ## 🏗️ Architecture
 
 ```mermaid
@@ -47,7 +37,7 @@ graph TD
     C -->|Blocked: Stock Tips| D[Polite Refusal + SEBI Disclaimer]
     C -->|Allowed| E[Gemini Embeddings]
     E --> F[ChromaDB Vector Store]
-    F -->|Top-K Chunks| G[Gemini 1.5 Flash RAG]
+    F -->|Top-K Chunks| G[Gemini Flash RAG]
     G -->|Answer + Citations| B
     B -->|TTS| A
 

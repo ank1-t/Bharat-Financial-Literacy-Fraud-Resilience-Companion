@@ -20,7 +20,7 @@ TRANSCRIPT_DIR = DATA_DIR / "transcripts"
 
 # ── Gemini LLM Config ──────────────────────────────────────────────────────────
 GEMINI_API_KEY    = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL      = "gemini-3.8-flash"
+GEMINI_MODEL      = "gemini-3.5-flash-lite"
 EMBEDDING_MODEL   = "models/gemini-embedding-001"
 GEMINI_TEMPERATURE = 0.2   # Low temperature for factual, grounded answers
 

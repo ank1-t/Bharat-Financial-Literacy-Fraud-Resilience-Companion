@@ -49,19 +49,23 @@ _COMPILED_QUERY_PATTERNS = [
 
 # ── Blocked Answer Patterns ────────────────────────────────────────────────────
 # Patterns that flag LLM output as potentially violating safety rules.
+# Matches actual advice or promises, while allowing educational fraud warnings
+# (e.g. "beware of guaranteed returns", "no guaranteed returns in mutual funds").
 
 _BLOCKED_ANSWER_PATTERNS = [
     r"\b(buy|sell|hold)\b.{0,30}\b(stocks?|shares?|equity)\b",
     r"\bprice target\b",
     r"\bI recommend (buying|selling|investing in)\b",
     r"\byou should (buy|sell|invest in|purchase)\b",
-    r"\bguaranteed?.{0,15}(returns?|profits?)\b",
-    r"\b\d+%\s*(guaranteed?|assured?)\b",
+    # Matches promises like "offers guaranteed returns" or "provides guaranteed returns", but not "claims of guaranteed returns" or "beware of guaranteed returns"
+    r"(?<!no\s)(?<!never\s)(?<!beware of\s)(?<!fake\s)(?<!claims of\s)\b(offers?|provides?|gives?|ensures?|with)\s+guaranteed?\s+(returns?|profits?)\b",
+    r"\b\d+%\s*(guaranteed?|assured?)\s*(returns?|profits?)\s*(?:is|are|will be|provided|offered)\b",
 ]
 
 _COMPILED_ANSWER_PATTERNS = [
     re.compile(p, re.IGNORECASE | re.DOTALL) for p in _BLOCKED_ANSWER_PATTERNS
 ]
+
 
 
 def check_query(query: str) -> tuple[bool, str]:

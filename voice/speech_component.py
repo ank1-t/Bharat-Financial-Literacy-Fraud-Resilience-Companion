@@ -41,11 +41,12 @@ def render_voice_input(language_code: str = "hi-IN", key: str = "voice_input") -
     <!DOCTYPE html>
     <html>
     <head>
+      <meta charset="utf-8">
       <style>
         body {{
           margin: 0;
           padding: 4px;
-          font-family: 'Segoe UI', sans-serif;
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
           background: transparent;
         }}
         #voiceBtn {{
@@ -79,46 +80,125 @@ def render_voice_input(language_code: str = "hi-IN", key: str = "voice_input") -
           50%        {{ box-shadow: 0 0 0 12px rgba(229, 57, 53, 0); }}
         }}
         #status {{
-          margin-top: 8px;
+          margin-top: 6px;
           font-size: 12px;
           color: #8B949E;
           text-align: center;
         }}
         #transcript-display {{
-          margin-top: 8px;
+          margin-top: 6px;
           font-size: 13px;
           color: #58A6FF;
           text-align: center;
-          font-style: italic;
+          font-weight: 500;
           min-height: 18px;
+          padding: 2px 8px;
+          background: rgba(88, 166, 255, 0.08);
+          border-radius: 6px;
         }}
+        .copy-btn {{
+          display: none;
+          margin: 6px auto 0;
+          padding: 4px 12px;
+          font-size: 12px;
+          background: #21262D;
+          color: #E6EDF3;
+          border: 1px solid #30363D;
+          border-radius: 12px;
+          cursor: pointer;
+        }}
+        .copy-btn:hover {{ background: #30363D; }}
       </style>
     </head>
     <body>
-      <button id="voiceBtn" onclick="startVoice()">{btn_label}</button>
+      <button id="voiceBtn" onclick="toggleVoice()">{btn_label}</button>
       <div id="status"></div>
       <div id="transcript-display"></div>
+      <button id="copyBtn" class="copy-btn" onclick="copyTranscript()">📋 Copy / कॉपी करें</button>
 
       <script>
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         const btn = document.getElementById('voiceBtn');
         const statusEl = document.getElementById('status');
         const transcriptEl = document.getElementById('transcript-display');
+        const copyBtn = document.getElementById('copyBtn');
+
+        let isListening = false;
+        let recognition = null;
+        let lastTranscript = '';
 
         if (!SpeechRecognition) {{
           btn.textContent = '❌ {error_msg}';
           btn.disabled = true;
           btn.style.background = '#444';
           btn.style.borderColor = '#444';
-          statusEl.textContent = 'Please use Chrome or Edge browser.';
+          statusEl.textContent = 'Please use Google Chrome, Edge, or a Web Speech compatible browser.';
         }}
 
-        let recognition;
+        function toggleVoice() {{
+          if (isListening) {{
+            stopVoice();
+          }} else {{
+            startVoice();
+          }}
+        }}
+
+        function stopVoice() {{
+          if (recognition) {{
+            try {{ recognition.stop(); }} catch(e) {{}}
+          }}
+          isListening = false;
+          btn.classList.remove('listening');
+          btn.textContent = '{btn_label}';
+        }}
+
+        function copyTranscript() {{
+          if (lastTranscript) {{
+            navigator.clipboard.writeText(lastTranscript).then(() => {{
+              copyBtn.textContent = '✅ Copied!';
+              setTimeout(() => {{ copyBtn.textContent = '📋 Copy / कॉपी करें'; }}, 2000);
+            }});
+          }}
+        }}
+
+        function fillParentInput(text) {{
+          try {{
+            // Attempt 1: Standard Streamlit component postMessage
+            window.parent.postMessage({{
+              isStreamlitMessage: true,
+              type: 'streamlit:setComponentValue',
+              value: text
+            }}, '*');
+
+            // Attempt 2: If same-origin (standard Streamlit embed), set input value directly
+            const parentDoc = window.parent.document;
+            const input = parentDoc.querySelector('input[data-testid="stTextInputRootElement"]') ||
+                          parentDoc.querySelector('input[type="text"]');
+            if (input) {{
+              const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+              nativeSetter.call(input, text);
+              input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+              input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+            }}
+          }} catch (err) {{
+            // Iframe sandbox or cross-origin restrictions
+            console.log('Parent transfer notification:', err);
+          }}
+        }}
 
         function startVoice() {{
-          recognition = new SpeechRecognition();
-          recognition.lang = '{language_code}';
-          recognition.interimResults = true;
+          try {{
+            recognition = new SpeechRecognition();
+          }} catch(e) {{
+            statusEl.textContent = 'Speech recognition initialization failed.';
+            return;
+          }}
+
+          // Primary language with fallback list
+          const primaryLang = '{language_code}';
+          const fallbackLang = primaryLang.startsWith('hi') ? 'hi' : (primaryLang.startsWith('en') ? 'en-US' : 'en-IN');
+          recognition.lang = primaryLang;
+          recognition.interimResults = false;
           recognition.maxAlternatives = 1;
           recognition.continuous = false;
 
@@ -126,10 +206,12 @@ def render_voice_input(language_code: str = "hi-IN", key: str = "voice_input") -
           btn.classList.add('listening');
           statusEl.textContent = '';
           transcriptEl.textContent = '';
+          copyBtn.style.display = 'none';
+          isListening = true;
 
           recognition.onresult = function(event) {{
             let interimTranscript = '';
-            let finalTranscript   = '';
+            let finalTranscript = '';
 
             for (let i = event.resultIndex; i < event.results.length; i++) {{
               const t = event.results[i][0].transcript;
@@ -140,44 +222,77 @@ def render_voice_input(language_code: str = "hi-IN", key: str = "voice_input") -
               }}
             }}
 
-            transcriptEl.textContent = finalTranscript || interimTranscript;
+            const current = finalTranscript || interimTranscript;
+            transcriptEl.textContent = current;
 
             if (finalTranscript) {{
-              // Send to Streamlit parent
-              window.parent.postMessage({{
-                isStreamlitMessage: true,
-                type: 'streamlit:setComponentValue',
-                value: finalTranscript
-              }}, '*');
+              lastTranscript = finalTranscript;
+              copyBtn.style.display = 'block';
+              fillParentInput(finalTranscript);
+
               btn.textContent = '{done_label}';
               btn.classList.remove('listening');
+              isListening = false;
               setTimeout(() => {{
-                btn.textContent = '{btn_label}';
-              }}, 2000);
+                if (!isListening) btn.textContent = '{btn_label}';
+              }}, 3000);
             }}
           }};
 
           recognition.onerror = function(event) {{
+            isListening = false;
             btn.classList.remove('listening');
             btn.textContent = '{btn_label}';
-            statusEl.textContent = 'Error: ' + event.error + '. Please try again.';
+            
+            if (event.error === 'network') {{
+              // If network error occurred with localized BCP-47 tag, retry once with simpler tag if not retried yet
+              if (recognition && recognition.lang !== fallbackLang) {{
+                statusEl.textContent = '🔄 Retrying with alternative language code (' + fallbackLang + ')...';
+                setTimeout(() => {{
+                  try {{
+                    recognition.lang = fallbackLang;
+                    recognition.start();
+                    isListening = true;
+                    btn.classList.add('listening');
+                    btn.textContent = '{listening}';
+                    return;
+                  }} catch(e) {{}}
+                }}, 300);
+                return;
+              }}
+              statusEl.innerHTML = '⚠️ <b>Speech Network Error:</b> Google Chrome voice server is unreachable (or blocked by VPN/proxy/adblocker). You can type your query in the text box below!';
+            }} else if (event.error === 'not-allowed') {{
+              statusEl.textContent = '⚠️ Microphone access denied. Please click the lock icon in the address bar and allow Microphone permission.';
+            }} else if (event.error === 'no-speech') {{
+              statusEl.textContent = 'No speech detected. Please speak closer to your microphone and try again.';
+            }} else {{
+              statusEl.textContent = 'Voice error: ' + event.error + '. Please try again or type below.';
+            }}
           }};
 
           recognition.onend = function() {{
+            isListening = false;
             btn.classList.remove('listening');
             if (btn.textContent === '{listening}') {{
               btn.textContent = '{btn_label}';
             }}
           }};
 
-          recognition.start();
+          try {{
+            recognition.start();
+          }} catch (err) {{
+            statusEl.textContent = 'Could not start microphone: ' + err.message;
+            isListening = false;
+            btn.classList.remove('listening');
+            btn.textContent = '{btn_label}';
+          }}
         }}
       </script>
     </body>
     </html>
     """
 
-    result = components.html(html_code, height=120)
+    result = components.html(html_code, height=140)
     return result
 
 
@@ -191,8 +306,16 @@ def render_tts_player(text: str, language_code: str = "hi-IN", auto_play: bool =
         language_code: BCP-47 language code.
         auto_play:     If True, starts speaking immediately on render.
     """
-    # Escape text for JS string safety
-    safe_text = text.replace("'", "\\'").replace("\n", " ").replace('"', '\\"')
+    import json
+    import re
+
+    # Strip citation brackets like [Source: ..., Pg 1] and markdown stars from spoken audio
+    clean_text = re.sub(r'\[(?:Source|Video):[^\]]+\]', '', text)
+    clean_text = re.sub(r'[*_#`]', '', clean_text)
+    clean_text = re.sub(r'\s+', ' ', clean_text).strip()
+
+    # Safely JSON serialize text to avoid any unescaped quotes or newlines breaking JS
+    safe_text_json = json.dumps(clean_text)
     is_hindi = language_code.startswith("hi")
 
     speak_label = "🔊 सुनें" if is_hindi else "🔊 Listen"
@@ -204,9 +327,10 @@ def render_tts_player(text: str, language_code: str = "hi-IN", auto_play: bool =
     <!DOCTYPE html>
     <html>
     <head>
+      <meta charset="utf-8">
       <style>
-        body {{ margin: 0; padding: 4px; background: transparent; font-family: 'Segoe UI', sans-serif; }}
-        .tts-controls {{ display: flex; gap: 8px; }}
+        body {{ margin: 0; padding: 4px; background: transparent; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }}
+        .tts-controls {{ display: flex; gap: 8px; align-items: center; }}
         .tts-btn {{
           padding: 6px 16px;
           border: 1px solid #30363D;
@@ -214,30 +338,82 @@ def render_tts_player(text: str, language_code: str = "hi-IN", auto_play: bool =
           background: #161B22;
           color: #E6EDF3;
           font-size: 13px;
+          font-weight: 500;
           cursor: pointer;
-          transition: background 0.2s;
+          transition: all 0.2s ease;
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
         }}
-        .tts-btn:hover {{ background: #21262D; }}
+        .tts-btn:hover {{
+          background: #21262D;
+          border-color: #58A6FF;
+          color: #58A6FF;
+        }}
+        #tts-status {{
+          font-size: 12px;
+          color: #8B949E;
+        }}
       </style>
     </head>
     <body>
       <div class="tts-controls">
-        <button class="tts-btn" onclick="speakText()">{speak_label}</button>
-        <button class="tts-btn" onclick="stopText()">{stop_label}</button>
+        <button id="playBtn" class="tts-btn" onclick="speakText()">{speak_label}</button>
+        <button id="stopBtn" class="tts-btn" onclick="stopText()">{stop_label}</button>
+        <span id="tts-status"></span>
       </div>
       <script>
-        const utterance = new SpeechSynthesisUtterance("{safe_text}");
-        utterance.lang = '{language_code}';
-        utterance.rate = 0.9;
-        utterance.pitch = 1.0;
+        const rawText = {safe_text_json};
+        const lang = '{language_code}';
+        const statusEl = document.getElementById('tts-status');
 
         function speakText() {{
+          if (!('speechSynthesis' in window)) {{
+            statusEl.textContent = 'TTS not supported in this browser.';
+            return;
+          }}
+
           window.speechSynthesis.cancel();
-          window.speechSynthesis.speak(utterance);
+
+          // Wait a fraction of time for cancellation to process
+          setTimeout(() => {{
+            const utterance = new SpeechSynthesisUtterance(rawText);
+            utterance.lang = lang;
+            utterance.rate = 0.95;
+            utterance.pitch = 1.0;
+
+            // Pick a matching voice if available
+            const voices = window.speechSynthesis.getVoices();
+            if (voices && voices.length > 0) {{
+              const matched = voices.find(v => v.lang === lang || v.lang.startsWith(lang.split('-')[0]));
+              if (matched) utterance.voice = matched;
+            }}
+
+            utterance.onstart = function() {{
+              statusEl.textContent = '▶️ Playing...';
+            }};
+            utterance.onend = function() {{
+              statusEl.textContent = '';
+            }};
+            utterance.onerror = function(e) {{
+              statusEl.textContent = '';
+              console.log('TTS error:', e);
+            }};
+
+            window.speechSynthesis.speak(utterance);
+          }}, 50);
         }}
 
         function stopText() {{
-          window.speechSynthesis.cancel();
+          if ('speechSynthesis' in window) {{
+            window.speechSynthesis.cancel();
+            statusEl.textContent = '';
+          }}
+        }}
+
+        // Populate voices asynchronously for Chrome
+        if ('speechSynthesis' in window) {{
+          window.speechSynthesis.onvoiceschanged = () => {{}};
         }}
 
         {auto_js}

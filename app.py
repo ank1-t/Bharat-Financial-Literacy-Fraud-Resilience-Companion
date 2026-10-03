@@ -25,7 +25,7 @@ st.set_page_config(
     menu_items={
         "Get Help":    "https://www.sebi.gov.in",
         "Report a bug": None,
-        "About": "Bharat Financial Literacy & Fraud Resilience Companion — Built for IIT BHU Sangyan & IIT Mandi Hackathons",
+        "About": "Bharat Financial Literacy & Fraud Resilience Companion — Voice-first investor education & fraud resilience platform",
     }
 )
 
@@ -165,9 +165,6 @@ with st.sidebar:
     # About section
     st.markdown("### ℹ️ About")
     st.markdown("""
-    Built for:
-    - 🏆 IIT BHU Sangyan (Track C + D)
-    - 🏆 IIT Mandi Multimodal AI (Track D)
 
     **Stack**: Streamlit · Gemini 1.5 Flash · ChromaDB · Web Speech API
 
@@ -226,16 +223,17 @@ with col_main:
         else "e.g. What is a mutual fund? Is this WhatsApp group safe?"
     )
 
-    # Pre-fill from voice result or example button
-    pre_fill = ""
-    if voice_result and isinstance(voice_result, str):
-        pre_fill = voice_result
-    elif st.session_state.get("pending_query"):
-        pre_fill = st.session_state.pop("pending_query")
+    # Clear input on successful submit from previous run
+    if st.session_state.pop("clear_input", False):
+        st.session_state["text_input"] = ""
+
+    # Handle voice input pre-fill
+    if voice_result and isinstance(voice_result, str) and voice_result.strip():
+        if st.session_state.get("text_input") != voice_result.strip():
+            st.session_state["text_input"] = voice_result.strip()
 
     user_query = st.text_input(
         "✏️ Or type your question:" if not is_hindi else "✏️ या टाइप करें:",
-        value=pre_fill,
         placeholder=placeholder,
         key="text_input",
         label_visibility="visible",
@@ -245,11 +243,19 @@ with col_main:
     ask_clicked = st.button(ask_label, use_container_width=True, type="primary")
 
     # ── Example Questions ───────────────────────────────────────────────────
-    render_example_questions(lang_code)
+    example_clicked = render_example_questions(lang_code)
 
-    # ── Process Query ───────────────────────────────────────────────────────
+    # Check if triggered by Ask button click or by clicking an example question
+    triggered_query = None
     if ask_clicked and user_query.strip():
-        query = user_query.strip()
+        triggered_query = user_query.strip()
+    elif example_clicked:
+        triggered_query = example_clicked
+
+    if triggered_query:
+        query = triggered_query
+
+
 
         with st.spinner("🔍 Searching knowledge base..." if not is_hindi else "🔍 खोज रहा हूं..."):
 
@@ -291,6 +297,7 @@ with col_main:
                         st.session_state["chat_history"].append({"role": "assistant", "content": answer, "is_refusal": False})
                         st.session_state["last_answer"] = answer
 
+        st.session_state["clear_input"] = True
         st.rerun()
 
     # ── Chat History ────────────────────────────────────────────────────────

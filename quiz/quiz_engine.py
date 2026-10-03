@@ -9,7 +9,7 @@ Adaptive Logic:
   - Wrong answer   → stay at same level, show explanation, proceed
   - 3 questions total, then show score badge
 
-Score Badges (for IIT Mandi Track D — adaptive learning):
+Score Badges (adaptive learning):
   3/3 correct → 🏆 Fraud Defender
   2/3 correct → 🥈 Alert Investor
   1/3 correct → 🥉 Learning Investor

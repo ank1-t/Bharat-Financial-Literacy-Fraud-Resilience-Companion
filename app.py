@@ -14,6 +14,7 @@ Requires:
 """
 
 import logging
+import html
 import streamlit as st
 
 # ── Page config MUST be the first Streamlit call ──────────────────────────────
@@ -22,25 +23,26 @@ st.set_page_config(
     page_icon="🇮🇳",
     layout="wide",
     initial_sidebar_state="expanded",
-    menu_items={
-        "Get Help":    "https://www.sebi.gov.in",
-        "Report a bug": None,
-        "About": "Bharat Financial Literacy & Fraud Resilience Companion — Voice-first investor education & fraud resilience platform",
-    }
 )
 
 # ── Imports (after set_page_config) ───────────────────────────────────────────
 from config.settings import (
     GEMINI_API_KEY, APP_NAME, APP_TAGLINE,
     LANGUAGE_OPTIONS, DEFAULT_LANGUAGE_LABEL, DEFAULT_LANGUAGE_CODE,
+    SEBI_PDF_SOURCES, YOUTUBE_SOURCES,
 )
 from ingestion.pdf_loader import load_all_pdfs
 from ingestion.youtube_loader import load_all_youtube
 from rag.embedder import embed_texts
-from rag.vector_store import upsert_chunks, get_collection_count
+from rag.vector_store import upsert_chunks, get_collection_count, reset_collection
 from rag.retriever import retrieve, format_context_block
 from rag.generator import generate_answer
-from guardrails.safety_filter import check_query, check_answer, get_refusal_message, get_fraud_alert_message
+from guardrails.safety_filter import (
+    check_query,
+    check_answer,
+    get_no_context_message,
+    get_refusal_message,
+)
 from quiz.quiz_engine import QuizSession
 from voice.speech_component import render_voice_input, render_tts_player
 from ui.styles import get_global_css
@@ -54,6 +56,7 @@ from ui.components import (
     render_safety_footer,
     render_example_questions,
 )
+from ui.localization import UI_TEXT, get_language_pack, get_translated_history
 
 # ── Logging ────────────────────────────────────────────────────────────────────
 logging.basicConfig(level=logging.INFO, format="%(levelname)s | %(name)s | %(message)s")
@@ -68,15 +71,15 @@ st.markdown(get_global_css(), unsafe_allow_html=True)
 # ══════════════════════════════════════════════════════════════════════════════
 
 @st.cache_resource(show_spinner=False)
-def initialize_knowledge_base():
+def initialize_knowledge_base(source_fingerprint: tuple[str, ...]):
     """
     Load PDFs + YouTube transcripts, embed them, and upsert into ChromaDB.
-    Cached by Streamlit — runs only once when the app first starts.
+    Cached by Streamlit for each configured source set.
 
     Returns:
         Total number of chunks indexed.
     """
-    logger.info("Initializing knowledge base...")
+    logger.info("Initializing knowledge base for source set %s", source_fingerprint)
 
     # 1. Load all document chunks
     pdf_chunks = load_all_pdfs()
@@ -85,12 +88,16 @@ def initialize_knowledge_base():
 
     if not all_chunks:
         logger.warning("No chunks loaded! Check data/pdfs/ directory and YouTube config.")
+        reset_collection()
         return 0
 
     # 2. Embed all chunks
     texts = [c["text"] for c in all_chunks]
     logger.info(f"Embedding {len(texts)} chunks...")
     embeddings = embed_texts(texts, task_type="retrieval_document")
+
+    # Rebuild instead of upserting so removed or replaced sources cannot linger.
+    reset_collection()
 
     # 3. Upsert into ChromaDB
     upsert_chunks(all_chunks, embeddings)
@@ -132,11 +139,11 @@ init_session()
 # ══════════════════════════════════════════════════════════════════════════════
 
 with st.sidebar:
-    st.markdown("### ⚙️ Settings")
+    settings_heading = st.empty()
 
     # Language selector
     selected_lang = st.selectbox(
-        "🌐 Language / भाषा",
+        f"🌐 {st.session_state['lang_label']}",
         options=list(LANGUAGE_OPTIONS.keys()),
         index=list(LANGUAGE_OPTIONS.keys()).index(st.session_state["lang_label"]),
         key="lang_selector",
@@ -147,38 +154,57 @@ with st.sidebar:
         st.rerun()
 
     lang_code = st.session_state["lang_code"]
-    is_hindi  = lang_code.startswith("hi")
 
+try:
+    with st.spinner(UI_TEXT["translation_loading"]):
+        language_pack = get_language_pack(lang_code)
+except (RuntimeError, ValueError) as error:
+    st.error(UI_TEXT["translation_error"])
+    st.caption(str(error))
+    st.stop()
+
+ui_text = language_pack["ui"]
+settings_heading.markdown(f"### ⚙️ {ui_text['settings']}")
+
+# Re-localize existing messages when the language changes.
+try:
+    with st.spinner(ui_text["translation_loading"]):
+        display_history = get_translated_history(
+            st.session_state["chat_history"],
+            lang_code,
+        )
+except (RuntimeError, ValueError) as error:
+    st.error(ui_text["translation_error"])
+    st.caption(str(error))
+    st.stop()
+
+with st.sidebar:
     st.divider()
 
     # Knowledge base status
-    st.markdown("### 📚 Knowledge Base")
-    render_kb_status(st.session_state.get("kb_chunk_count", 0))
+    st.markdown(f"### 📚 {ui_text['knowledge_base']}")
+    render_kb_status(st.session_state.get("kb_chunk_count", 0), ui_text)
 
     if not GEMINI_API_KEY:
-        st.error("⚠️ GEMINI_API_KEY not found!\nAdd it to your `.env` file.")
+        st.error(ui_text["api_key_missing"])
     else:
-        st.success("✅ Gemini API key loaded")
+        st.success(ui_text["api_key_loaded"])
 
     st.divider()
 
     # About section
-    st.markdown("### ℹ️ About")
-    st.markdown("""
-
-    **Stack**: Streamlit · Gemini 1.5 Flash · ChromaDB · Web Speech API
-
-    **Sources**: SEBI PDFs · YouTube Transcripts
+    st.markdown(f"### ℹ️ {ui_text['about']}")
+    st.markdown(f"""
 
     ---
-    📞 SEBI: **1800-266-7575**
-    🌐 [cybercrime.gov.in](https://cybercrime.gov.in)
+    📞 {ui_text['sebi_helpline']}: **1800-266-7575**
+    🌐 [{ui_text['cybercrime']}](https://cybercrime.gov.in)
     """)
 
     st.divider()
 
     # Clear chat button
-    if st.button("🗑️ Clear Chat", use_container_width=True):
+    if st.button(f"🗑️ {ui_text['clear_chat']}", use_container_width=True):
         st.session_state["chat_history"] = []
         st.session_state["last_results"] = []
         st.session_state["last_answer"]  = ""
@@ -190,10 +216,16 @@ with st.sidebar:
 # ══════════════════════════════════════════════════════════════════════════════
 
 lang_code = st.session_state["lang_code"]
-is_hindi  = lang_code.startswith("hi")
 
-with st.spinner("📚 Loading SEBI knowledge base... (first load only, ~30 seconds)"):
-    chunk_count = initialize_knowledge_base()
+with st.spinner(f"📚 {ui_text['kb_spinner']}"):
+    source_fingerprint = tuple(
+        [f"pdf:{source['filename']}:{source['title']}:{source['source_tag']}" for source in SEBI_PDF_SOURCES]
+        + [
+            f"youtube:{source['video_id']}:{source['title']}:{source['source_tag']}:{','.join(source['languages'])}"
+            for source in YOUTUBE_SOURCES
+        ]
+    )
+    chunk_count = initialize_knowledge_base(source_fingerprint)
     st.session_state["kb_chunk_count"] = chunk_count
 
 
@@ -202,7 +234,7 @@ with st.spinner("📚 Loading SEBI knowledge base... (first load only, ~30 secon
 # ══════════════════════════════════════════════════════════════════════════════
 
 # Hero
-render_hero()
+render_hero(ui_text)
 
 # Two-column layout: main content | quiz panel
 col_main, col_quiz = st.columns([3, 2], gap="large")
@@ -212,16 +244,17 @@ col_main, col_quiz = st.columns([3, 2], gap="large")
 with col_main:
 
     # ── Voice / Text Input ──────────────────────────────────────────────────
-    st.markdown('<div class="card-header">🎤 Ask Your Question</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="card-header">🎤 {ui_text["ask_question"]}</div>', unsafe_allow_html=True)
 
     # Voice input component
-    voice_result = render_voice_input(language_code=lang_code, key="main_voice")
+    voice_result = render_voice_input(
+        language_code=lang_code,
+        key="main_voice",
+        translations=ui_text,
+    )
 
     # Text fallback
-    placeholder = (
-        "उदाहरण: म्यूचुअल फंड क्या होता है?" if is_hindi
-        else "e.g. What is a mutual fund? Is this WhatsApp group safe?"
-    )
+    placeholder = ui_text["question_placeholder"]
 
     # Clear input on successful submit from previous run
     if st.session_state.pop("clear_input", False):
@@ -233,17 +266,16 @@ with col_main:
             st.session_state["text_input"] = voice_result.strip()
 
     user_query = st.text_input(
-        "✏️ Or type your question:" if not is_hindi else "✏️ या टाइप करें:",
+        f"✏️ {ui_text['text_input']}",
         placeholder=placeholder,
         key="text_input",
         label_visibility="visible",
     )
 
-    ask_label = "पूछें 🚀" if is_hindi else "Ask 🚀"
-    ask_clicked = st.button(ask_label, use_container_width=True, type="primary")
+    ask_clicked = st.button(f"{ui_text['ask_button']} 🚀", use_container_width=True, type="primary")
 
     # ── Example Questions ───────────────────────────────────────────────────
-    example_clicked = render_example_questions(lang_code)
+    example_clicked = render_example_questions(language_pack)
 
     # Check if triggered by Ask button click or by clicking an example question
     triggered_query = None
@@ -257,15 +289,24 @@ with col_main:
 
 
 
-        with st.spinner("🔍 Searching knowledge base..." if not is_hindi else "🔍 खोज रहा हूं..."):
+        with st.spinner(ui_text["searching"]):
 
             # Layer 1 safety check
             is_blocked, violation_type = check_query(query)
 
             if is_blocked:
                 refusal = get_refusal_message(lang_code)
-                st.session_state["chat_history"].append({"role": "user", "content": query})
-                st.session_state["chat_history"].append({"role": "assistant", "content": refusal, "is_refusal": True})
+                st.session_state["chat_history"].append({
+                    "role": "user",
+                    "content": query,
+                    "language_code": lang_code,
+                })
+                st.session_state["chat_history"].append({
+                    "role": "assistant",
+                    "content": refusal,
+                    "is_refusal": True,
+                    "language_code": lang_code,
+                })
                 st.session_state["last_answer"] = refusal
 
             else:
@@ -274,27 +315,41 @@ with col_main:
                 st.session_state["last_results"] = results
 
                 if not results:
-                    no_ctx = (
-                        "मुझे इस विषय पर SEBI के दस्तावेज़ों में जानकारी नहीं मिली। कृपया sebi.gov.in पर जाएं।"
-                        if is_hindi else
-                        "I couldn't find relevant information in the SEBI knowledge base. Please visit sebi.gov.in."
-                    )
-                    answer = no_ctx
+                    answer = get_no_context_message(lang_code)
                 else:
                     context = format_context_block(results)
-                    answer = generate_answer(query, context)
+                    answer = generate_answer(query, context, language_code=lang_code)
 
                     # Layer 2: post-generation answer check
                     is_violating, snippet = check_answer(answer)
                     if is_violating:
                         logger.warning(f"Answer post-filter triggered for snippet: {snippet}")
                         answer = get_refusal_message(lang_code)
-                        st.session_state["chat_history"].append({"role": "user", "content": query})
-                        st.session_state["chat_history"].append({"role": "assistant", "content": answer, "is_refusal": True})
+                        st.session_state["chat_history"].append({
+                            "role": "user",
+                            "content": query,
+                            "language_code": lang_code,
+                        })
+                        st.session_state["chat_history"].append({
+                            "role": "assistant",
+                            "content": answer,
+                            "is_refusal": True,
+                            "language_code": lang_code,
+                        })
                         st.session_state["last_answer"] = answer
                     else:
-                        st.session_state["chat_history"].append({"role": "user", "content": query})
-                        st.session_state["chat_history"].append({"role": "assistant", "content": answer, "is_refusal": False})
+                        st.session_state["chat_history"].append({
+                            "role": "user",
+                            "content": query,
+                            "language_code": lang_code,
+                        })
+                        st.session_state["chat_history"].append({
+                            "role": "assistant",
+                            "content": answer,
+                            "is_refusal": False,
+                            "sources": results,
+                            "language_code": lang_code,
+                        })
                         st.session_state["last_answer"] = answer
 
         st.session_state["clear_input"] = True
@@ -303,49 +358,59 @@ with col_main:
     # ── Chat History ────────────────────────────────────────────────────────
     if st.session_state["chat_history"]:
         st.markdown("---")
-        st.markdown("### 💬 Conversation" if not is_hindi else "### 💬 बातचीत")
+        st.markdown(f"### 💬 {ui_text['conversation']}")
 
-        for i, msg in enumerate(reversed(st.session_state["chat_history"])):
+        for i, msg in enumerate(reversed(display_history)):
             if msg["role"] == "user":
                 st.markdown(f"""
                 <div class="card" style="border-left:3px solid #58A6FF; margin-bottom:8px;">
-                  <strong style="color:#58A6FF;">👤 {'आप' if is_hindi else 'You'}:</strong><br>
-                  {msg['content']}
+                  <strong style="color:#58A6FF;">👤 {ui_text['you']}:</strong><br>
+                  {html.escape(msg['content'])}
                 </div>
                 """, unsafe_allow_html=True)
             else:
                 is_refusal = msg.get("is_refusal", False)
-                render_answer_card(msg["content"], is_refusal=is_refusal)
+                render_answer_card(
+                    msg["content"],
+                    is_refusal=is_refusal,
+                    sources=msg.get("sources", []),
+                    translations=ui_text,
+                )
 
                 # TTS for the most recent answer only
-                if i == 0 and msg["content"] == st.session_state.get("last_answer", ""):
-                    render_tts_player(msg["content"], language_code=lang_code)
+                if i == 0:
+                    render_tts_player(
+                        msg["content"],
+                        language_code=lang_code,
+                        translations=ui_text,
+                    )
 
         # Show source pills for last retrieval
         if st.session_state["last_results"]:
-            render_source_pills(st.session_state["last_results"])
+            render_source_pills(st.session_state["last_results"], ui_text)
 
 
 # ─── RIGHT COLUMN: Adaptive Quiz ───────────────────────────────────────────
 with col_quiz:
-    quiz_title = "🧠 धोखाधड़ी जागरूकता क्विज़" if is_hindi else "🧠 Fraud Awareness Quiz"
-    st.markdown(f'<div class="quiz-card"><div class="card-header">{quiz_title}</div>', unsafe_allow_html=True)
-
-    quiz_subtitle = (
-        "क्या आप निवेश धोखाधड़ी पहचान सकते हैं? परीक्षण करें!"
-        if is_hindi else
-        "Can you spot investment fraud? Test your skills!"
+    quiz_title = f"🧠 {ui_text['quiz_title']}"
+    st.markdown(
+        f'<div class="quiz-card"><div class="card-header">{html.escape(quiz_title)}</div>',
+        unsafe_allow_html=True,
     )
-    st.markdown(f"<p style='font-size:13px;color:#8B949E;'>{quiz_subtitle}</p>", unsafe_allow_html=True)
+
+    quiz_subtitle = ui_text["quiz_subtitle"]
+    st.markdown(
+        f"<p style='font-size:13px;color:#8B949E;'>{html.escape(quiz_subtitle)}</p>",
+        unsafe_allow_html=True,
+    )
     st.markdown("</div>", unsafe_allow_html=True)
 
     quiz: QuizSession = st.session_state["quiz_session"]
 
     # Start / Restart button
     start_label = (
-        "🔄 नया क्विज़ शुरू करें" if (is_hindi and quiz.is_complete) else
-        "▶️ क्विज़ शुरू करें" if is_hindi else
-        "🔄 Restart Quiz" if quiz.is_complete else "▶️ Start Quiz"
+        f"🔄 {ui_text['quiz_restart']}"
+        if quiz.is_complete else f"▶️ {ui_text['quiz_start']}"
     )
 
     if not st.session_state["quiz_active"] or quiz.is_complete:
@@ -363,28 +428,35 @@ with col_quiz:
 
         if question:
             answered, total = quiz.progress
-            render_quiz_progress(answered, total, quiz.score)
+            render_quiz_progress(answered, total, quiz.score, ui_text)
+            question_translation = language_pack["questions"][question["id"]]
 
             # Difficulty badge
             diff_colors = {1: "#3FB950", 2: "#D29922", 3: "#F85149"}
-            diff_labels_en = {1: "Beginner", 2: "Intermediate", 3: "Advanced"}
-            diff_labels_hi = {1: "शुरुआती", 2: "मध्यम", 3: "उन्नत"}
+            diff_labels = {
+                1: ui_text["beginner"],
+                2: ui_text["intermediate"],
+                3: ui_text["advanced"],
+            }
             diff = question["difficulty"]
-            diff_label = diff_labels_hi[diff] if is_hindi else diff_labels_en[diff]
+            diff_label = ui_text["difficulty"].format(level=diff, label=diff_labels[diff])
             st.markdown(
                 f'<span style="font-size:11px;font-weight:600;color:{diff_colors[diff]};'
                 f'border:1px solid {diff_colors[diff]};padding:2px 8px;border-radius:12px;">'
-                f'Level {diff}: {diff_label}</span>',
+                f'{html.escape(diff_label)}</span>',
                 unsafe_allow_html=True
             )
             st.markdown("<br>", unsafe_allow_html=True)
 
             # Question text
-            q_text = question["text_hi"] if is_hindi else question["text_en"]
-            st.markdown(f'<div class="quiz-question">{q_text}</div>', unsafe_allow_html=True)
+            q_text = question_translation["text"]
+            st.markdown(
+                f'<div class="quiz-question">{html.escape(q_text)}</div>',
+                unsafe_allow_html=True,
+            )
 
             # Options
-            options = question["options_hi"] if is_hindi else question["options_en"]
+            options = question_translation["options"]
 
             if not st.session_state["quiz_answered"]:
                 for opt_idx, opt_text in enumerate(options):
@@ -401,27 +473,27 @@ with col_quiz:
                         st.markdown(
                             f'<div style="padding:10px;border:2px solid #3FB950;border-radius:8px;'
                             f'background:rgba(63,185,80,0.1);color:#3FB950;margin:4px 0;">'
-                            f'✅ {opt_text}</div>',
+                            f'✅ {html.escape(opt_text)}</div>',
                             unsafe_allow_html=True
                         )
                     elif opt_idx == st.session_state.get("_chosen_idx"):
                         st.markdown(
                             f'<div style="padding:10px;border:2px solid #F85149;border-radius:8px;'
                             f'background:rgba(248,81,73,0.1);color:#F85149;margin:4px 0;">'
-                            f'❌ {opt_text}</div>',
+                            f'❌ {html.escape(opt_text)}</div>',
                             unsafe_allow_html=True
                         )
                     else:
                         st.markdown(
                             f'<div style="padding:10px;border:1px solid #30363D;border-radius:8px;'
-                            f'color:#8B949E;margin:4px 0;">{opt_text}</div>',
+                            f'color:#8B949E;margin:4px 0;">{html.escape(opt_text)}</div>',
                             unsafe_allow_html=True
                         )
 
                 # Explanation
                 is_correct = res.get("is_correct", False)
-                result_icon = "✅ सही!" if (is_correct and is_hindi) else "✅ Correct!" if is_correct else ("❌ गलत" if is_hindi else "❌ Wrong")
-                explanation = res.get("explanation_hi" if is_hindi else "explanation_en", "")
+                result_icon = f"✅ {ui_text['correct']}" if is_correct else f"❌ {ui_text['wrong']}"
+                explanation = question_translation["explanation"]
                 source = res.get("source", "")
 
                 st.markdown(f"""
@@ -429,15 +501,19 @@ with col_quiz:
                   border:1px solid {'#3FB950' if is_correct else '#F85149'};
                   border-radius:8px;padding:16px;margin-top:12px;">
                   <strong style="color:{'#3FB950' if is_correct else '#F85149'}">{result_icon}</strong><br>
-                  <span style="font-size:13px;color:#E6EDF3;">{explanation}</span><br>
-                  <span style="font-size:11px;color:#58A6FF;margin-top:6px;display:block;">{source}</span>
+                  <span style="font-size:13px;color:#E6EDF3;">{html.escape(explanation)}</span><br>
+                  <span style="font-size:11px;color:#58A6FF;margin-top:6px;display:block;">{html.escape(source)}</span>
                 </div>
                 """, unsafe_allow_html=True)
 
-                next_label = "अगला सवाल →" if is_hindi else "Next Question →"
+                next_label = f"{ui_text['next_question']} →"
                 if st.button(next_label, key="quiz_next", use_container_width=True, type="primary"):
                     if quiz.is_complete:
-                        st.session_state["quiz_result"] = quiz.get_final_result(lang_code)
+                        result = quiz.get_final_result(lang_code)
+                        badge = language_pack["badges"][str(result["score"])]
+                        result["badge_title"] = badge["title"]
+                        result["badge_desc"] = badge["description"]
+                        st.session_state["quiz_result"] = result
                     else:
                         st.session_state["quiz_question"] = quiz.get_next_question()
                         st.session_state["quiz_answered"] = False
@@ -445,19 +521,30 @@ with col_quiz:
 
     # Quiz complete — show score badge
     if quiz.is_complete and st.session_state.get("quiz_result") is None:
-        st.session_state["quiz_result"] = quiz.get_final_result(lang_code)
+        result = quiz.get_final_result(lang_code)
+        badge = language_pack["badges"][str(result["score"])]
+        result["badge_title"] = badge["title"]
+        result["badge_desc"] = badge["description"]
+        st.session_state["quiz_result"] = result
 
     if quiz.is_complete and st.session_state.get("quiz_result"):
-        render_score_badge(st.session_state["quiz_result"])
+        current_result = st.session_state["quiz_result"]
+        current_badge = language_pack["badges"][str(current_result["score"])]
+        current_result["badge_title"] = current_badge["title"]
+        current_result["badge_desc"] = current_badge["description"]
+        render_score_badge(current_result, ui_text)
 
         missed = st.session_state["quiz_result"].get("fraud_types_missed", [])
         if missed:
-            learn_label = "📚 इन विषयों पर और जानें:" if is_hindi else "📚 Learn more about:"
+            learn_label = f"📚 {ui_text['learn_more']}"
             st.markdown(f"**{learn_label}**")
             for ft in set(missed):
-                ft_readable = ft.replace("_", " ").title()
+                ft_readable = language_pack["fraud_types"].get(
+                    ft,
+                    ft.replace("_", " ").title(),
+                )
                 st.markdown(f"- {ft_readable}")
 
 
 # ── Safety Footer ───────────────────────────────────────────────────────────
-render_safety_footer()
+render_safety_footer(ui_text)

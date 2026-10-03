@@ -18,7 +18,7 @@
 
 A **regional voice-first AI companion** that helps first-time and Tier-2/3 investors in India:
 
-- 🗣️ **Ask financial questions in Hindi or English** via voice or text
+- 🗣️ **Ask financial questions in 11 Indian languages** via voice or text: Hindi, English, Marathi, Punjabi, Gujarati, Kannada, Tamil, Bengali, Telugu, Malayalam, and Odia
 - 📚 **Get answers backed by SEBI documents** with exact page citations
 - 🎥 **Watch relevant video clips** with precise timestamps
 - 🚨 **Detect investment fraud** — WhatsApp scams, guaranteed-return traps
@@ -64,6 +64,12 @@ streamlit run app.py
 ```
 
 Open [http://localhost:8501](http://localhost:8501) in **Chrome** (required for Web Speech API).
+Answer citations and the retrieved-sources panel link to the matching video timestamp or open the
+local PDF at its cited page. Add the configured SEBI PDFs to `data/pdfs/`; missing PDFs are shown
+as unavailable rather than as broken links.
+The full interface, existing conversation, adaptive quiz, generated answers, safety messages, and
+voice controls use the selected language. Interface and quiz translations are generated on first
+selection with the configured Gemini API key and cached by Streamlit for the current app session.
 
 ---
 
@@ -80,7 +86,7 @@ Open [http://localhost:8501](http://localhost:8501) in **Chrome** (required for 
 │   └── settings.py           # Centralized configuration
 │
 ├── data/
-│   ├── pdfs/                 # Pre-committed SEBI awareness PDFs
+│   ├── pdfs/                 # Add configured SEBI awareness PDFs here
 │   └── transcripts/          # Cached YouTube transcript JSONs
 │
 ├── ingestion/

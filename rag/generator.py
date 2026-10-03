@@ -8,7 +8,7 @@ to produce grounded, citation-rich answers.
 
 import logging
 import google.generativeai as genai
-from config.settings import GEMINI_API_KEY, GEMINI_MODEL, GEMINI_TEMPERATURE
+from config.settings import GEMINI_API_KEY, GEMINI_MODEL, GEMINI_TEMPERATURE, LANGUAGE_NAMES
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +24,9 @@ CONTEXT FROM OFFICIAL KNOWLEDGE BASE:
 USER QUESTION:
 {question}
 
+RESPONSE LANGUAGE:
+Write the full answer in {answer_language}. Do not switch to Hindi or English unless that is the selected language. Keep citation tags exactly as written in the context.
+
 ═══════════════════════ INSTRUCTIONS FOR YOUR ANSWER ═══════════════════════
 1. **Directly Answer the Core Question First:**
    - Always focus 80% of your answer on thoroughly and clearly explaining what the user asked about (e.g. for "what is SIP?", explain Systematic Investment Plan, rupee cost averaging, power of compounding, and how it works).
@@ -32,7 +35,7 @@ USER QUESTION:
 2. **Structure & Formatting:**
    - 1-2 sentence warm introduction and direct definition.
    - Core concepts in bullet points with **bold titles**.
-   - Language match: If Hindi/Hinglish, reply in Hindi (Devanagari). If English, reply in Indian English.
+   - Use the selected response language above, including for headings, cautions, and explanations.
    - Add a brief 1-2 bullet "⚠️ Things to Keep in Mind / ध्यान दें" at the end (e.g., market risk, no guaranteed returns). Do not let scam warnings overshadow the actual answer.
    - Only bring in fraud hotlines (1930 / 1800-266-7575) when the topic involves scams, fraud, or high-risk claims.
 
@@ -46,16 +49,23 @@ USER QUESTION:
 YOUR DIRECT, COMPREHENSIVE & HELPFUL ANSWER:"""
 
 
+def _build_prompt(question: str, context: str, language_code: str) -> str:
+    answer_language = LANGUAGE_NAMES.get(language_code, LANGUAGE_NAMES["en-IN"])
+    return SYSTEM_PROMPT_TEMPLATE.format(
+        context=context,
+        question=question,
+        answer_language=answer_language,
+    )
 
 
-
-def generate_answer(question: str, context: str) -> str:
+def generate_answer(question: str, context: str, language_code: str = "en-IN") -> str:
     """
     Generate a grounded, citation-rich answer using Gemini 1.5 Flash.
 
     Args:
         question: The user's question (Hindi or English).
         context:  Formatted context string from retriever.format_context_block().
+        language_code: Selected BCP-47 response language code.
 
     Returns:
         The model's answer as a string.
@@ -63,7 +73,7 @@ def generate_answer(question: str, context: str) -> str:
     if not GEMINI_API_KEY:
         return "⚠️ GEMINI_API_KEY is not configured. Please add it to your .env file."
 
-    prompt = SYSTEM_PROMPT_TEMPLATE.format(context=context, question=question)
+    prompt = _build_prompt(question, context, language_code)
 
     fallback_models = [GEMINI_MODEL, "gemini-3.5-flash-lite", "gemini-3-flash-preview", "gemini-3.5-flash", "gemini-3.8-flash"]
     # De-duplicate while preserving order

@@ -11,4 +11,6 @@
 #   https://www.sebi.gov.in/investor-corner.html
 #   https://www.sebi.gov.in/investor/publications.html
 #
-# These PDFs are committed to Git for offline reliability.
+# Add the PDF files here using the exact filenames above. Retrieved-source links
+# open the matching local PDF in a new browser tab at the cited page.
+# If a configured PDF is not present, the app will show that it is unavailable.

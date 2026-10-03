@@ -8,16 +8,25 @@ component iframe. On recognition, the transcript is passed back to
 the parent Streamlit app via the Streamlit component value mechanism.
 
 Also provides text-to-speech (TTS) functionality for reading back
-LLM answers aloud in Hindi or English.
+LLM answers aloud in the selected language.
 
 Note: Web Speech API requires a modern browser (Chrome 33+, Edge 79+).
 Firefox has limited support. Safari requires user gesture.
 """
 
+import html
+import json
+
 import streamlit.components.v1 as components
 
+from ui.localization import UI_TEXT
 
-def render_voice_input(language_code: str = "hi-IN", key: str = "voice_input") -> str | None:
+
+def render_voice_input(
+    language_code: str = "hi-IN",
+    key: str = "voice_input",
+    translations: dict | None = None,
+) -> str | None:
     """
     Render a voice input button using the Web Speech API.
 
@@ -25,17 +34,32 @@ def render_voice_input(language_code: str = "hi-IN", key: str = "voice_input") -
     the recognized transcript as a string via Streamlit component value.
 
     Args:
-        language_code: BCP-47 code, e.g. "hi-IN" or "en-IN".
+        language_code: BCP-47 code, e.g. "hi-IN", "mr-IN", or "en-IN".
         key:           Unique Streamlit component key.
 
     Returns:
         Recognized transcript string, or None if not yet spoken.
     """
-    is_hindi = language_code.startswith("hi")
-    btn_label  = "🎤 बोलें (Speak)"     if is_hindi else "🎤 Speak"
-    listening  = "🔴 सुन रहा हूँ..."    if is_hindi else "🔴 Listening..."
-    done_label = "✅ सुन लिया"          if is_hindi else "✅ Got it!"
-    error_msg  = "माइक्रोफ़ोन उपलब्ध नहीं" if is_hindi else "Microphone unavailable"
+    ui_text = translations or UI_TEXT
+    btn_label = f"🎤 {ui_text['speak']}"
+    listening = f"🔴 {ui_text['listening']}"
+    done_label = f"✅ {ui_text['got_it']}"
+    voice_messages = {
+        "speak": btn_label,
+        "listening": listening,
+        "got_it": done_label,
+        "microphone_unavailable": ui_text["microphone_unavailable"],
+        "speech_help": ui_text["speech_help"],
+        "speech_retry": ui_text["speech_retry"],
+        "speech_network_error": ui_text["speech_network_error"],
+        "microphone_denied": ui_text["microphone_denied"],
+        "no_speech": ui_text["no_speech"],
+        "voice_error": ui_text["voice_error"],
+        "speech_start_error": ui_text["speech_start_error"],
+        "copy_transcript": ui_text["copy_transcript"],
+        "copied": ui_text["copied"],
+    }
+    voice_messages_json = json.dumps(voice_messages, ensure_ascii=False)
 
     html_code = f"""
     <!DOCTYPE html>
@@ -111,12 +135,13 @@ def render_voice_input(language_code: str = "hi-IN", key: str = "voice_input") -
       </style>
     </head>
     <body>
-      <button id="voiceBtn" onclick="toggleVoice()">{btn_label}</button>
+      <button id="voiceBtn" onclick="toggleVoice()">{html.escape(btn_label)}</button>
       <div id="status"></div>
       <div id="transcript-display"></div>
-      <button id="copyBtn" class="copy-btn" onclick="copyTranscript()">📋 Copy / कॉपी करें</button>
+      <button id="copyBtn" class="copy-btn" onclick="copyTranscript()">📋 {html.escape(ui_text['copy_transcript'])}</button>
 
       <script>
+        const messages = {voice_messages_json};
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         const btn = document.getElementById('voiceBtn');
         const statusEl = document.getElementById('status');
@@ -128,11 +153,11 @@ def render_voice_input(language_code: str = "hi-IN", key: str = "voice_input") -
         let lastTranscript = '';
 
         if (!SpeechRecognition) {{
-          btn.textContent = '❌ {error_msg}';
+          btn.textContent = '❌ ' + messages.microphone_unavailable;
           btn.disabled = true;
           btn.style.background = '#444';
           btn.style.borderColor = '#444';
-          statusEl.textContent = 'Please use Google Chrome, Edge, or a Web Speech compatible browser.';
+          statusEl.textContent = messages.speech_help;
         }}
 
         function toggleVoice() {{
@@ -149,14 +174,14 @@ def render_voice_input(language_code: str = "hi-IN", key: str = "voice_input") -
           }}
           isListening = false;
           btn.classList.remove('listening');
-          btn.textContent = '{btn_label}';
+          btn.textContent = messages.speak;
         }}
 
         function copyTranscript() {{
           if (lastTranscript) {{
             navigator.clipboard.writeText(lastTranscript).then(() => {{
-              copyBtn.textContent = '✅ Copied!';
-              setTimeout(() => {{ copyBtn.textContent = '📋 Copy / कॉपी करें'; }}, 2000);
+              copyBtn.textContent = '✅ ' + messages.copied;
+              setTimeout(() => {{ copyBtn.textContent = '📋 ' + messages.copy_transcript; }}, 2000);
             }});
           }}
         }}
@@ -196,13 +221,13 @@ def render_voice_input(language_code: str = "hi-IN", key: str = "voice_input") -
 
           // Primary language with fallback list
           const primaryLang = '{language_code}';
-          const fallbackLang = primaryLang.startsWith('hi') ? 'hi' : (primaryLang.startsWith('en') ? 'en-US' : 'en-IN');
+          const fallbackLang = primaryLang.split('-')[0];
           recognition.lang = primaryLang;
           recognition.interimResults = false;
           recognition.maxAlternatives = 1;
           recognition.continuous = false;
 
-          btn.textContent = '{listening}';
+          btn.textContent = messages.listening;
           btn.classList.add('listening');
           statusEl.textContent = '';
           transcriptEl.textContent = '';
@@ -230,11 +255,11 @@ def render_voice_input(language_code: str = "hi-IN", key: str = "voice_input") -
               copyBtn.style.display = 'block';
               fillParentInput(finalTranscript);
 
-              btn.textContent = '{done_label}';
+              btn.textContent = messages.got_it;
               btn.classList.remove('listening');
               isListening = false;
               setTimeout(() => {{
-                if (!isListening) btn.textContent = '{btn_label}';
+                if (!isListening) btn.textContent = messages.speak;
               }}, 3000);
             }}
           }};
@@ -242,49 +267,49 @@ def render_voice_input(language_code: str = "hi-IN", key: str = "voice_input") -
           recognition.onerror = function(event) {{
             isListening = false;
             btn.classList.remove('listening');
-            btn.textContent = '{btn_label}';
+            btn.textContent = messages.speak;
             
             if (event.error === 'network') {{
               // If network error occurred with localized BCP-47 tag, retry once with simpler tag if not retried yet
               if (recognition && recognition.lang !== fallbackLang) {{
-                statusEl.textContent = '🔄 Retrying with alternative language code (' + fallbackLang + ')...';
+                statusEl.textContent = '🔄 ' + messages.speech_retry;
                 setTimeout(() => {{
                   try {{
                     recognition.lang = fallbackLang;
                     recognition.start();
                     isListening = true;
                     btn.classList.add('listening');
-                    btn.textContent = '{listening}';
+                    btn.textContent = messages.listening;
                     return;
                   }} catch(e) {{}}
                 }}, 300);
                 return;
               }}
-              statusEl.innerHTML = '⚠️ <b>Speech Network Error:</b> Google Chrome voice server is unreachable (or blocked by VPN/proxy/adblocker). You can type your query in the text box below!';
+              statusEl.textContent = '⚠️ ' + messages.speech_network_error;
             }} else if (event.error === 'not-allowed') {{
-              statusEl.textContent = '⚠️ Microphone access denied. Please click the lock icon in the address bar and allow Microphone permission.';
+              statusEl.textContent = '⚠️ ' + messages.microphone_denied;
             }} else if (event.error === 'no-speech') {{
-              statusEl.textContent = 'No speech detected. Please speak closer to your microphone and try again.';
+              statusEl.textContent = messages.no_speech;
             }} else {{
-              statusEl.textContent = 'Voice error: ' + event.error + '. Please try again or type below.';
+              statusEl.textContent = messages.voice_error;
             }}
           }};
 
           recognition.onend = function() {{
             isListening = false;
             btn.classList.remove('listening');
-            if (btn.textContent === '{listening}') {{
-              btn.textContent = '{btn_label}';
+            if (btn.textContent === messages.listening) {{
+              btn.textContent = messages.speak;
             }}
           }};
 
           try {{
             recognition.start();
           }} catch (err) {{
-            statusEl.textContent = 'Could not start microphone: ' + err.message;
+            statusEl.textContent = messages.speech_start_error;
             isListening = false;
             btn.classList.remove('listening');
-            btn.textContent = '{btn_label}';
+            btn.textContent = messages.speak;
           }}
         }}
       </script>
@@ -296,7 +321,12 @@ def render_voice_input(language_code: str = "hi-IN", key: str = "voice_input") -
     return result
 
 
-def render_tts_player(text: str, language_code: str = "hi-IN", auto_play: bool = False) -> None:
+def render_tts_player(
+    text: str,
+    language_code: str = "hi-IN",
+    auto_play: bool = False,
+    translations: dict | None = None,
+) -> None:
     """
     Render a text-to-speech player using the Web Speech Synthesis API.
     Speaks the provided text in the given language.
@@ -316,10 +346,16 @@ def render_tts_player(text: str, language_code: str = "hi-IN", auto_play: bool =
 
     # Safely JSON serialize text to avoid any unescaped quotes or newlines breaking JS
     safe_text_json = json.dumps(clean_text)
-    is_hindi = language_code.startswith("hi")
-
-    speak_label = "🔊 सुनें" if is_hindi else "🔊 Listen"
-    stop_label  = "⏹ रोकें"  if is_hindi else "⏹ Stop"
+    ui_text = translations or UI_TEXT
+    speak_label = f"🔊 {ui_text['listen']}"
+    stop_label = f"⏹ {ui_text['stop']}"
+    tts_messages_json = json.dumps(
+        {
+            "unsupported": ui_text["tts_unsupported"],
+            "playing": ui_text["playing"],
+        },
+        ensure_ascii=False,
+    )
 
     auto_js = "speakText();" if auto_play else ""
 
@@ -358,18 +394,19 @@ def render_tts_player(text: str, language_code: str = "hi-IN", auto_play: bool =
     </head>
     <body>
       <div class="tts-controls">
-        <button id="playBtn" class="tts-btn" onclick="speakText()">{speak_label}</button>
-        <button id="stopBtn" class="tts-btn" onclick="stopText()">{stop_label}</button>
+        <button id="playBtn" class="tts-btn" onclick="speakText()">{html.escape(speak_label)}</button>
+        <button id="stopBtn" class="tts-btn" onclick="stopText()">{html.escape(stop_label)}</button>
         <span id="tts-status"></span>
       </div>
       <script>
         const rawText = {safe_text_json};
         const lang = '{language_code}';
+        const messages = {tts_messages_json};
         const statusEl = document.getElementById('tts-status');
 
         function speakText() {{
           if (!('speechSynthesis' in window)) {{
-            statusEl.textContent = 'TTS not supported in this browser.';
+            statusEl.textContent = messages.unsupported;
             return;
           }}
 
@@ -390,7 +427,7 @@ def render_tts_player(text: str, language_code: str = "hi-IN", auto_play: bool =
             }}
 
             utterance.onstart = function() {{
-              statusEl.textContent = '▶️ Playing...';
+              statusEl.textContent = '▶️ ' + messages.playing;
             }};
             utterance.onend = function() {{
               statusEl.textContent = '';

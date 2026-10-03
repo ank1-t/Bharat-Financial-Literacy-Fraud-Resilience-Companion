@@ -71,24 +71,6 @@ def get_global_css() -> str:
       color: var(--text-secondary);
       font-weight: 400;
     }
-    .hero-badges {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-      margin-top: 16px;
-    }
-    .hero-badge {
-      font-size: 11px;
-      font-weight: 600;
-      padding: 3px 10px;
-      border-radius: 20px;
-      border: 1px solid;
-      letter-spacing: 0.5px;
-    }
-    .badge-sebi   { color: #3FB950; border-color: #3FB950; background: rgba(63,185,80,0.1); }
-    .badge-gemini { color: #58A6FF; border-color: #58A6FF; background: rgba(88,166,255,0.1); }
-    .badge-voice  { color: #FF6B00; border-color: #FF6B00; background: rgba(255,107,0,0.1); }
-
     /* ── Cards ────────────────────────────────────────────────── */
     .card {
       background: var(--card-bg);

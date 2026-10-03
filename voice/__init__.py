@@ -1,1 +1,1 @@
-"""voice package — Web Speech API bridge for Hindi/English voice I/O."""
+"""voice package — Web Speech API bridge for Indian-language voice I/O."""

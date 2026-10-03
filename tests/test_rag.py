@@ -55,6 +55,16 @@ class TestPdfLoader:
 class TestYouTubeLoader:
     """Tests for YouTube transcript ingestion module."""
 
+    def test_fraud_awareness_source_uses_official_nse_video(self):
+        from config.settings import YOUTUBE_SOURCES
+
+        fraud_source = next(
+            source for source in YOUTUBE_SOURCES
+            if source["source_tag"] == "NSE India — SEBI vs Scam"
+        )
+        assert fraud_source["video_id"] == "zp5HrhL2RVo"
+        assert fraud_source["title"] == "SEBI vs SCAM — Investor Awareness & Protection"
+
     def test_seconds_to_timestamp(self):
         from ingestion.youtube_loader import _seconds_to_timestamp
         assert _seconds_to_timestamp(0)    == "00:00"
@@ -116,6 +126,92 @@ class TestRetriever:
 
 class TestGenerator:
     """Tests for the RAG generator module."""
+
+    def test_language_options_cover_requested_regional_languages(self):
+        from config.settings import LANGUAGE_OPTIONS
+
+        assert {
+            "मराठी (Marathi)",
+            "ਪੰਜਾਬੀ (Punjabi)",
+            "ગુજરાતી (Gujarati)",
+            "ಕನ್ನಡ (Kannada)",
+            "தமிழ் (Tamil)",
+        }.issubset(LANGUAGE_OPTIONS)
+
+    def test_prompt_uses_selected_regional_language(self):
+        from rag.generator import _build_prompt
+
+        prompt = _build_prompt("प्रश्न", "संदर्भ", "mr-IN")
+
+        assert "Marathi (मराठी, Devanagari script)" in prompt
+        assert "Do not switch to Hindi or English" in prompt
+
+    def test_refusal_is_localized_for_regional_language(self):
+        from guardrails.safety_filter import get_refusal_message
+
+        assert "मी शेअर टिप्स" in get_refusal_message("mr-IN")
+
+    def test_no_context_message_is_localized(self):
+        from guardrails.safety_filter import get_no_context_message
+
+        assert "આ વિષય" in get_no_context_message("gu-IN")
+
+    def test_language_pack_translates_ui_and_quiz_content(self, monkeypatch):
+        import json
+        from types import SimpleNamespace
+
+        from ui import localization
+
+        source_json = json.dumps(localization._source_bundle(), ensure_ascii=False, sort_keys=True)
+        observed_prompt = {}
+
+        class FakeModel:
+            def generate_content(self, prompt, generation_config):
+                observed_prompt["prompt"] = prompt
+                source = json.loads(prompt.split("JSON:\n", 1)[1])
+                return SimpleNamespace(text=json.dumps(source, ensure_ascii=False))
+
+        monkeypatch.setattr(localization, "GEMINI_API_KEY", "test-key")
+        monkeypatch.setattr(localization.genai, "configure", lambda **kwargs: None)
+        monkeypatch.setattr(localization.genai, "GenerativeModel", lambda **kwargs: FakeModel())
+        localization._translate_bundle.clear()
+
+        pack = localization._translate_bundle("mr-IN", source_json)
+
+        assert "Marathi" in observed_prompt["prompt"]
+        assert pack["ui"]["quiz_title"] == localization.UI_TEXT["quiz_title"]
+        assert len(pack["questions"]) == len(localization.QUESTIONS)
+
+    def test_translated_history_updates_language_without_mutating_original(self, monkeypatch):
+        from ui import localization
+
+        history = [{
+            "role": "assistant",
+            "content": "Answer [Source: SEBI Guide, Pg 2]",
+            "language_code": "en-IN",
+        }]
+        monkeypatch.setattr(
+            localization,
+            "_translate_history_texts",
+            lambda language_code, messages_json: [
+                "उत्तर [Source: SEBI Guide, Pg 2]"
+            ],
+        )
+
+        translated = localization.get_translated_history(history, "mr-IN")
+
+        assert translated[0]["language_code"] == "mr-IN"
+        assert translated[0]["content"].endswith("[Source: SEBI Guide, Pg 2]")
+        assert history[0]["language_code"] == "en-IN"
+
+    def test_translation_validation_rejects_missing_format_variables(self):
+        from ui.localization import _validate_translation
+
+        with pytest.raises(ValueError, match="format placeholder"):
+            _validate_translation(
+                {"progress": "Question {current} of {total}"},
+                {"progress": "Question {total}"},
+            )
 
     def test_extract_citations_pdf(self):
         from rag.generator import extract_citations

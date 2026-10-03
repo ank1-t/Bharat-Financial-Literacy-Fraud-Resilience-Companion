@@ -34,8 +34,30 @@ CHROMA_COLLECTION_NAME = "bharat_finlit_kb"
 
 # ── Voice / Language Config ────────────────────────────────────────────────────
 LANGUAGE_OPTIONS = {
-    "हिंदी (Hindi)": "hi-IN",
-    "English":        "en-IN",
+    "हिंदी (Hindi)":          "hi-IN",
+    "English":                 "en-IN",
+    "मराठी (Marathi)":        "mr-IN",
+    "ਪੰਜਾਬੀ (Punjabi)":       "pa-IN",
+    "ગુજરાતી (Gujarati)":     "gu-IN",
+    "ಕನ್ನಡ (Kannada)":        "kn-IN",
+    "தமிழ் (Tamil)":          "ta-IN",
+    "বাংলা (Bengali)":        "bn-IN",
+    "తెలుగు (Telugu)":        "te-IN",
+    "മലയാളം (Malayalam)":     "ml-IN",
+    "ଓଡ଼ିଆ (Odia)":           "or-IN",
+}
+LANGUAGE_NAMES = {
+    "hi-IN": "Hindi (हिंदी, Devanagari script)",
+    "en-IN": "Indian English",
+    "mr-IN": "Marathi (मराठी, Devanagari script)",
+    "pa-IN": "Punjabi (ਪੰਜਾਬੀ, Gurmukhi script)",
+    "gu-IN": "Gujarati (ગુજરાતી script)",
+    "kn-IN": "Kannada (ಕನ್ನಡ script)",
+    "ta-IN": "Tamil (தமிழ் script)",
+    "bn-IN": "Bengali (বাংলা script)",
+    "te-IN": "Telugu (తెలుగు script)",
+    "ml-IN": "Malayalam (മലയാളം script)",
+    "or-IN": "Odia (ଓଡ଼ିଆ script)",
 }
 DEFAULT_LANGUAGE_LABEL = "हिंदी (Hindi)"
 DEFAULT_LANGUAGE_CODE  = "hi-IN"
@@ -64,16 +86,16 @@ SEBI_PDF_SOURCES = [
 # Curated SEBI / NSE investor awareness videos with Hindi + English captions
 YOUTUBE_SOURCES = [
     {
-        "video_id":  "n_YOIINF01g",
-        "title":     "SEBI — Investor Awareness: Beware of Frauds (Official)",
-        "source_tag": "SEBI Official Video",
+        "video_id":  "zp5HrhL2RVo",
+        "title":     "SEBI vs SCAM — Investor Awareness & Protection",
+        "source_tag": "NSE India — SEBI vs Scam",
         "languages": ["hi", "en"],
     },
     {
-        "video_id":  "0Jl-cJJBFdA",
-        "title":     "NSE India — Understanding Mutual Funds for Beginners",
-        "source_tag": "NSE Education Video",
-        "languages": ["hi", "en"],
+        "video_id":  "PS4amNfYx0k",
+        "title":     "Everything You Need to Know About Mutual Funds",
+        "source_tag": "NSE India — Mutual Funds",
+        "languages": ["en", "hi"],
     },
 ]
 

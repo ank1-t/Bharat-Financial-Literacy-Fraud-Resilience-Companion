@@ -9,8 +9,27 @@
 [![Gemini](https://img.shields.io/badge/Gemini-AI-orange.svg)](https://ai.google.dev)
 [![ChromaDB](https://img.shields.io/badge/ChromaDB-in--memory-green.svg)](https://www.trychroma.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://bharat-financial-literacy-fraud-resilience-companion-razzgwu9l.streamlit.app/)
+
+<br/>
+
+<a href="https://bharat-financial-literacy-fraud-resilience-companion-razzgwu9l.streamlit.app/" target="_blank">
+  <img src="https://img.shields.io/badge/🚀_TRY_LIVE_WEB_APP-Click_Here-00C853?style=for-the-badge&logo=streamlit&logoColor=white&labelColor=0E1117" alt="Try Live Demo" height="42" />
+</a>
+
+<p align="center">
+  🌐 <b>Live Web URL:</b> <a href="https://bharat-financial-literacy-fraud-resilience-companion-razzgwu9l.streamlit.app/">bharat-financial-literacy-fraud-resilience-companion.streamlit.app</a>
+</p>
 
 </div>
+
+---
+
+> [!TIP]
+> ### 🌟 **Live Interactive Demo Available**
+> Experience voice queries, regional multi-language support, SEBI citations, and the fraud quiz live without local setup:  
+> 👉 **[Launch Bharat Financial Literacy Companion](https://bharat-financial-literacy-fraud-resilience-companion-razzgwu9l.streamlit.app/)**
+
 
 ---
 

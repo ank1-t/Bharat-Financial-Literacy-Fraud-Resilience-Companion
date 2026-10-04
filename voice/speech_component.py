@@ -339,9 +339,9 @@ def render_tts_player(
     import json
     import re
 
-    # Strip citation brackets like [Source: ..., Pg 1] and markdown stars from spoken audio
+    # Strip citation brackets like [Source: ..., Pg 1], markdown symbols, and extra whitespace
     clean_text = re.sub(r'\[(?:Source|Video):[^\]]+\]', '', text)
-    clean_text = re.sub(r'[*_#`]', '', clean_text)
+    clean_text = re.sub(r'[*_#`~>|]', ' ', clean_text)
     clean_text = re.sub(r'\s+', ' ', clean_text).strip()
 
     # Safely JSON serialize text to avoid any unescaped quotes or newlines breaking JS
@@ -366,7 +366,7 @@ def render_tts_player(
       <meta charset="utf-8">
       <style>
         body {{ margin: 0; padding: 4px; background: transparent; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }}
-        .tts-controls {{ display: flex; gap: 8px; align-items: center; }}
+        .tts-controls {{ display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }}
         .tts-btn {{
           padding: 6px 16px;
           border: 1px solid #30363D;
@@ -380,77 +380,244 @@ def render_tts_player(
           display: inline-flex;
           align-items: center;
           gap: 6px;
+          user-select: none;
         }}
         .tts-btn:hover {{
           background: #21262D;
           border-color: #58A6FF;
           color: #58A6FF;
         }}
+        .tts-btn:active {{
+          transform: scale(0.98);
+        }}
         #tts-status {{
           font-size: 12px;
           color: #8B949E;
+          transition: color 0.2s ease;
+        }}
+        #tts-status.active {{
+          color: #58A6FF;
+        }}
+        #tts-status.error {{
+          color: #F85149;
         }}
       </style>
     </head>
     <body>
       <div class="tts-controls">
-        <button id="playBtn" class="tts-btn" onclick="speakText()">{html.escape(speak_label)}</button>
-        <button id="stopBtn" class="tts-btn" onclick="stopText()">{html.escape(stop_label)}</button>
+        <button id="playBtn" class="tts-btn" type="button" onclick="speakText()">{html.escape(speak_label)}</button>
+        <button id="stopBtn" class="tts-btn" type="button" onclick="stopText()">{html.escape(stop_label)}</button>
         <span id="tts-status"></span>
       </div>
       <script>
         const rawText = {safe_text_json};
-        const lang = '{language_code}';
+        const targetLang = '{language_code}';
         const messages = {tts_messages_json};
         const statusEl = document.getElementById('tts-status');
+        const playBtn = document.getElementById('playBtn');
 
-        function speakText() {{
-          if (!('speechSynthesis' in window)) {{
-            statusEl.textContent = messages.unsupported;
-            return;
-          }}
+        let isSpeaking = false;
+        let speechId = 0;
 
-          window.speechSynthesis.cancel();
+        function setStatus(text, type) {{
+          if (!statusEl) return;
+          statusEl.textContent = text;
+          statusEl.className = type || '';
+        }}
 
-          // Wait a fraction of time for cancellation to process
-          setTimeout(() => {{
-            const utterance = new SpeechSynthesisUtterance(rawText);
-            utterance.lang = lang;
-            utterance.rate = 0.95;
-            utterance.pitch = 1.0;
+        function getSynth() {{
+          try {{
+            if (window.speechSynthesis) return window.speechSynthesis;
+          }} catch (e) {{}}
+          try {{
+            if (window.parent && window.parent.speechSynthesis) return window.parent.speechSynthesis;
+          }} catch (e) {{}}
+          return null;
+        }}
 
-            // Pick a matching voice if available
-            const voices = window.speechSynthesis.getVoices();
-            if (voices && voices.length > 0) {{
-              const matched = voices.find(v => v.lang === lang || v.lang.startsWith(lang.split('-')[0]));
-              if (matched) utterance.voice = matched;
+        function getAvailableVoices(synth) {{
+          try {{
+            const voices = synth.getVoices();
+            if (voices && voices.length > 0) return voices;
+          }} catch (e) {{}}
+          try {{
+            if (window.parent && window.parent.speechSynthesis) {{
+              const pVoices = window.parent.speechSynthesis.getVoices();
+              if (pVoices && pVoices.length > 0) return pVoices;
             }}
+          }} catch (e) {{}}
+          return [];
+        }}
 
-            utterance.onstart = function() {{
-              statusEl.textContent = '▶️ ' + messages.playing;
-            }};
-            utterance.onend = function() {{
-              statusEl.textContent = '';
-            }};
-            utterance.onerror = function(e) {{
-              statusEl.textContent = '';
-              console.log('TTS error:', e);
-            }};
+        function splitIntoChunks(text, maxLength = 180) {{
+          if (!text) return [];
+          if (text.length <= maxLength) return [text];
 
-            window.speechSynthesis.speak(utterance);
-          }}, 50);
+          // Split by sentence terminators (., ।, ?, !, \\n)
+          const sentenceRegex = /[^.!?।\\n]+[.!?।\\n]+|[^.!?।\\n]+$/g;
+          const sentences = text.match(sentenceRegex) || [text];
+          const chunks = [];
+          let currentChunk = '';
+
+          for (let s of sentences) {{
+            s = s.trim();
+            if (!s) continue;
+            if ((currentChunk + ' ' + s).trim().length <= maxLength) {{
+              currentChunk = currentChunk ? (currentChunk + ' ' + s) : s;
+            }} else {{
+              if (currentChunk) chunks.push(currentChunk);
+              if (s.length > maxLength) {{
+                // Fallback: split long sentences by comma or space
+                const words = s.split(' ');
+                let subChunk = '';
+                for (let w of words) {{
+                  if ((subChunk + ' ' + w).trim().length <= maxLength) {{
+                    subChunk = subChunk ? (subChunk + ' ' + w) : w;
+                  }} else {{
+                    if (subChunk) chunks.push(subChunk);
+                    subChunk = w;
+                  }}
+                }}
+                if (subChunk) currentChunk = subChunk;
+                else currentChunk = '';
+              }} else {{
+                currentChunk = s;
+              }}
+            }}
+          }}
+          if (currentChunk) chunks.push(currentChunk);
+          return chunks;
+        }}
+
+        function chooseBestVoice(voices, lang) {{
+          if (!voices || voices.length === 0) return null;
+          const langCode = lang.toLowerCase();
+          const baseLang = langCode.split('-')[0];
+
+          // 1. Exact match (e.g. "hi-IN" or "hi_IN")
+          let matched = voices.find(v => (v.lang && (v.lang.toLowerCase() === langCode || v.lang.toLowerCase().replace('_', '-') === langCode)));
+          if (matched) return matched;
+
+          // 2. Base language match (e.g. "hi")
+          matched = voices.find(v => (v.lang && v.lang.toLowerCase().startsWith(baseLang)));
+          if (matched) return matched;
+
+          // 3. Fallback to English voice if Indian language voice not installed on OS
+          matched = voices.find(v => (v.lang && (v.lang.toLowerCase() === 'en-in' || v.lang.toLowerCase().startsWith('en'))));
+          if (matched) return matched;
+
+          // 4. Default voice
+          matched = voices.find(v => v.default) || voices[0];
+          return matched || null;
         }}
 
         function stopText() {{
-          if ('speechSynthesis' in window) {{
-            window.speechSynthesis.cancel();
-            statusEl.textContent = '';
+          const synth = getSynth();
+          speechId++;
+          isSpeaking = false;
+          if (synth) {{
+            try {{ synth.cancel(); }} catch (e) {{}}
           }}
+          setStatus('', '');
         }}
 
-        // Populate voices asynchronously for Chrome
-        if ('speechSynthesis' in window) {{
-          window.speechSynthesis.onvoiceschanged = () => {{}};
+        function speakText() {{
+          const synth = getSynth();
+          if (!synth) {{
+            setStatus(messages.unsupported, 'error');
+            return;
+          }}
+
+          if (!rawText) {{
+            return;
+          }}
+
+          // Cancel any existing utterance before starting new one
+          speechId++;
+          const currentId = speechId;
+          try {{ synth.cancel(); }} catch (e) {{}}
+
+          // Allow cancel to flush
+          setTimeout(() => {{
+            if (currentId !== speechId) return;
+
+            const chunks = splitIntoChunks(rawText);
+            if (chunks.length === 0) return;
+
+            const voices = getAvailableVoices(synth);
+            const voice = chooseBestVoice(voices, targetLang);
+            let chunkIndex = 0;
+            isSpeaking = true;
+
+            setStatus('▶️ ' + messages.playing, 'active');
+
+            function speakNextChunk() {{
+              if (currentId !== speechId || !isSpeaking) return;
+
+              if (chunkIndex >= chunks.length) {{
+                isSpeaking = false;
+                setStatus('', '');
+                return;
+              }}
+
+              const textChunk = chunks[chunkIndex];
+              const utterance = new SpeechSynthesisUtterance(textChunk);
+              utterance.lang = targetLang;
+              utterance.rate = 0.95;
+              utterance.pitch = 1.0;
+
+              if (voice) {{
+                utterance.voice = voice;
+              }}
+
+              utterance.onstart = function() {{
+                if (currentId === speechId) {{
+                  setStatus('▶️ ' + messages.playing, 'active');
+                }}
+              }};
+
+              utterance.onend = function() {{
+                if (currentId === speechId && isSpeaking) {{
+                  chunkIndex++;
+                  speakNextChunk();
+                }}
+              }};
+
+              utterance.onerror = function(e) {{
+                if (e.error === 'canceled' || e.error === 'interrupted') return;
+                console.log('TTS utterance error:', e);
+                // Try playing next chunk if this chunk errored
+                if (currentId === speechId && isSpeaking) {{
+                  chunkIndex++;
+                  if (chunkIndex < chunks.length) {{
+                    speakNextChunk();
+                  }} else {{
+                    isSpeaking = false;
+                    setStatus('', '');
+                  }}
+                }}
+              }};
+
+              try {{
+                synth.speak(utterance);
+                // Chrome long-pause workaround
+                if (synth.paused) {{
+                  synth.resume();
+                }}
+              }} catch (err) {{
+                console.log('Synth speak exception:', err);
+                setStatus('', '');
+              }}
+            }}
+
+            speakNextChunk();
+          }}, 60);
+        }}
+
+        // Listen for voiceschanged event to populate voices cache
+        const synth = getSynth();
+        if (synth && 'onvoiceschanged' in synth) {{
+          synth.onvoiceschanged = () => {{}};
         }}
 
         {auto_js}

@@ -92,3 +92,33 @@ def test_pdf_link_opens_at_cited_page(tmp_path, monkeypatch):
     assert "application/pdf" in rendered["html"]
     assert "#page=7" in rendered["html"]
     assert rendered["height"] == 48
+
+
+def test_render_tts_player_controls_and_translations(monkeypatch):
+    rendered = []
+    monkeypatch.setattr(
+        speech_component.components,
+        "html",
+        lambda content, height: rendered.append({"content": content, "height": height}),
+    )
+    ui_text = dict(localization.UI_TEXT)
+    ui_text.update({
+        "listen": "ऐका",
+        "stop": "थांबवा",
+        "playing": "वाजत आहे...",
+    })
+
+    sample_answer = "म्युच्युअल फंड [Source: sebi_mf_guide.pdf, Pg 3] **गुंतवणूक** करण्यासाठी उत्तम पर्याय आहे."
+    speech_component.render_tts_player(sample_answer, language_code="mr-IN", translations=ui_text)
+
+    assert len(rendered) == 1
+    html_out = rendered[0]["content"]
+    assert "🔊 ऐका" in html_out
+    assert "⏹ थांबवा" in html_out
+    assert "वाजत आहे..." in html_out
+    assert "speakText()" in html_out
+    assert "stopText()" in html_out
+    # Check citation stripped from spoken text json
+    assert "sebi_mf_guide.pdf" not in html_out
+    assert "targetLang = 'mr-IN'" in html_out
+

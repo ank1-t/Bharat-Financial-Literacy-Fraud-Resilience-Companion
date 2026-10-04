@@ -119,6 +119,7 @@ def render_voice_input(
           padding: 2px 8px;
           background: rgba(88, 166, 255, 0.08);
           border-radius: 6px;
+          display: none;
         }}
         .copy-btn {{
           display: none;
@@ -186,29 +187,99 @@ def render_voice_input(
           }}
         }}
 
-        function fillParentInput(text) {{
+        function findStreamlitInput() {{
           try {{
-            // Attempt 1: Standard Streamlit component postMessage
+            const parentDoc = window.parent.document;
+            if (!parentDoc) return null;
+
+            // 1. Look for text input inside Streamlit data-testid container
+            const stContainer = parentDoc.querySelector('[data-testid="stTextInput"]');
+            if (stContainer) {{
+              const inp = stContainer.querySelector('input');
+              if (inp) return inp;
+            }}
+
+            // 2. BaseWeb container or Root element
+            const rootEl = parentDoc.querySelector('[data-testid="stTextInputRootElement"]') ||
+                           parentDoc.querySelector('[data-baseweb="input"]');
+            if (rootEl) {{
+              if (rootEl.tagName && rootEl.tagName.toLowerCase() === 'input') return rootEl;
+              const inp = rootEl.querySelector('input');
+              if (inp) return inp;
+            }}
+
+            // 3. Search all visible text inputs in the parent document
+            const allInputs = parentDoc.querySelectorAll('input[type="text"], input:not([type])');
+            for (let i = 0; i < allInputs.length; i++) {{
+              const inp = allInputs[i];
+              if (inp.offsetParent !== null || inp.offsetWidth > 0 || inp.offsetHeight > 0) {{
+                return inp;
+              }}
+            }}
+
+            // 4. Check for chat input textarea fallback
+            const chatArea = parentDoc.querySelector('textarea[data-testid="stChatInputTextArea"]') ||
+                             parentDoc.querySelector('textarea');
+            if (chatArea) return chatArea;
+
+            return null;
+          }} catch (err) {{
+            console.warn('Could not access parent document:', err);
+            return null;
+          }}
+        }}
+
+        function fillParentInput(text) {{
+          if (!text) return false;
+          let written = false;
+
+          try {{
+            // Streamlit component postMessage notification
             window.parent.postMessage({{
               isStreamlitMessage: true,
               type: 'streamlit:setComponentValue',
               value: text
             }}, '*');
+          }} catch (e) {{}}
 
-            // Attempt 2: If same-origin (standard Streamlit embed), set input value directly
-            const parentDoc = window.parent.document;
-            const input = parentDoc.querySelector('input[data-testid="stTextInputRootElement"]') ||
-                          parentDoc.querySelector('input[type="text"]');
+          try {{
+            const input = findStreamlitInput();
             if (input) {{
-              const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-              nativeSetter.call(input, text);
-              input.dispatchEvent(new Event('input', {{ bubbles: true }}));
-              input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+              const parentWindow = window.parent;
+              const isTextArea = input.tagName && input.tagName.toLowerCase() === 'textarea';
+              const proto = isTextArea
+                ? (parentWindow.HTMLTextAreaElement ? parentWindow.HTMLTextAreaElement.prototype : HTMLTextAreaElement.prototype)
+                : (parentWindow.HTMLInputElement ? parentWindow.HTMLInputElement.prototype : HTMLInputElement.prototype);
+
+              const descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
+              if (descriptor && descriptor.set) {{
+                descriptor.set.call(input, text);
+              }} else {{
+                input.value = text;
+              }}
+
+              // Reset React internal tracker for React 16/17/18/19 controlled inputs
+              if (input._valueTracker) {{
+                input._valueTracker.setValue('');
+              }}
+
+              // Dispatch events so Streamlit's React components capture the change
+              input.dispatchEvent(new Event('input', {{ bubbles: true, composed: true }}));
+              input.dispatchEvent(new Event('change', {{ bubbles: true, composed: true }}));
+
+              // Focus input and move cursor to end
+              input.focus();
+              if (typeof input.setSelectionRange === 'function') {{
+                const len = input.value.length;
+                input.setSelectionRange(len, len);
+              }}
+              written = true;
             }}
           }} catch (err) {{
-            // Iframe sandbox or cross-origin restrictions
-            console.log('Parent transfer notification:', err);
+            console.warn('Direct input fill error:', err);
           }}
+
+          return written;
         }}
 
         function startVoice() {{
@@ -223,7 +294,7 @@ def render_voice_input(
           const primaryLang = '{language_code}';
           const fallbackLang = primaryLang.split('-')[0];
           recognition.lang = primaryLang;
-          recognition.interimResults = false;
+          recognition.interimResults = true;
           recognition.maxAlternatives = 1;
           recognition.continuous = false;
 
@@ -231,6 +302,7 @@ def render_voice_input(
           btn.classList.add('listening');
           statusEl.textContent = '';
           transcriptEl.textContent = '';
+          transcriptEl.style.display = 'block';
           copyBtn.style.display = 'none';
           isListening = true;
 
@@ -247,20 +319,33 @@ def render_voice_input(
               }}
             }}
 
-            const current = finalTranscript || interimTranscript;
-            transcriptEl.textContent = current;
+            const current = (finalTranscript || interimTranscript).trim();
+            if (current) {{
+              transcriptEl.textContent = '🗣️ ' + current;
+              // Stream words directly into the parent question box in real-time
+              fillParentInput(current);
+            }}
 
             if (finalTranscript) {{
-              lastTranscript = finalTranscript;
-              copyBtn.style.display = 'block';
-              fillParentInput(finalTranscript);
+              lastTranscript = finalTranscript.trim();
+              const ok = fillParentInput(lastTranscript);
 
               btn.textContent = messages.got_it;
               btn.classList.remove('listening');
               isListening = false;
+              
+              if (ok) {{
+                statusEl.textContent = '✨ ' + messages.got_it;
+              }} else {{
+                copyBtn.style.display = 'block';
+              }}
+
               setTimeout(() => {{
-                if (!isListening) btn.textContent = messages.speak;
-              }}, 3000);
+                if (!isListening) {{
+                  btn.textContent = messages.speak;
+                  statusEl.textContent = '';
+                }}
+              }}, 3500);
             }}
           }};
 
@@ -268,9 +353,9 @@ def render_voice_input(
             isListening = false;
             btn.classList.remove('listening');
             btn.textContent = messages.speak;
+            transcriptEl.style.display = 'none';
             
             if (event.error === 'network') {{
-              // If network error occurred with localized BCP-47 tag, retry once with simpler tag if not retried yet
               if (recognition && recognition.lang !== fallbackLang) {{
                 statusEl.textContent = '🔄 ' + messages.speech_retry;
                 setTimeout(() => {{
@@ -310,6 +395,7 @@ def render_voice_input(
             isListening = false;
             btn.classList.remove('listening');
             btn.textContent = messages.speak;
+            transcriptEl.style.display = 'none';
           }}
         }}
       </script>
@@ -317,7 +403,7 @@ def render_voice_input(
     </html>
     """
 
-    result = components.html(html_code, height=140)
+    result = components.html(html_code, height=130)
     return result
 
 

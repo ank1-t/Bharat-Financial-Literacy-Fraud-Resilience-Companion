@@ -193,13 +193,17 @@ with st.sidebar:
     st.divider()
 
     # About section
-    st.markdown(f"### ℹ️ {ui_text['about']}")
+    about_text = ui_text.get("about_description", UI_TEXT["about_description"])
+    st.markdown(f"### ℹ️ {ui_text.get('about', 'About')}")
     st.markdown(f"""
+    <p style="font-size: 13px; color: #8B949E; line-height: 1.5; margin-bottom: 8px;">
+      {html.escape(about_text)}
+    </p>
 
     ---
-    📞 {ui_text['sebi_helpline']}: **1800-266-7575**
-    🌐 [{ui_text['cybercrime']}](https://cybercrime.gov.in)
-    """)
+    📞 {ui_text.get('sebi_helpline', 'SEBI Investor Helpline')}: **1800-266-7575**
+    🌐 [{ui_text.get('cybercrime', 'Report cybercrime')}](https://cybercrime.gov.in)
+    """, unsafe_allow_html=True)
 
     st.divider()
 

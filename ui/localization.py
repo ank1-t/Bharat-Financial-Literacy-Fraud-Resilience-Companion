@@ -25,6 +25,7 @@ UI_TEXT = {
     "api_key_missing": "AI service is not configured. Add your API key to the .env file.",
     "api_key_loaded": "AI service is ready",
     "about": "About",
+    "about_description": "A voice-first regional AI companion helping investors learn financial concepts, verify schemes, and detect fraud using trusted SEBI materials.",
     "sebi_helpline": "SEBI Investor Helpline",
     "clear_chat": "Clear Chat",
     "translation_loading": "Preparing this language...",
@@ -199,11 +200,20 @@ def _translate_bundle(language_code: str, source_json: str) -> dict:
 
 def get_language_pack(language_code: str) -> dict:
     """Return translations for app copy, examples, quiz content, and result badges."""
+    source = _source_bundle()
     if language_code == "en-IN":
-        return _source_bundle()
+        return source
 
-    source_json = json.dumps(_source_bundle(), ensure_ascii=False, sort_keys=True)
-    return _translate_bundle(language_code, source_json)
+    source_json = json.dumps(source, ensure_ascii=False, sort_keys=True)
+    translated = _translate_bundle(language_code, source_json)
+
+    # Defensively backfill any missing keys from English source bundle (e.g. if cached)
+    if isinstance(translated, dict) and "ui" in translated and isinstance(translated["ui"], dict):
+        merged_ui = dict(source["ui"])
+        merged_ui.update(translated["ui"])
+        translated["ui"] = merged_ui
+
+    return translated
 
 
 def get_translated_history(history: list[dict], language_code: str) -> list[dict]:

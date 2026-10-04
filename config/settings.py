@@ -19,8 +19,15 @@ PDF_DIR  = DATA_DIR / "pdfs"
 TRANSCRIPT_DIR = DATA_DIR / "transcripts"
 
 # ── Gemini LLM Config ──────────────────────────────────────────────────────────
-GEMINI_API_KEY    = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL      = "gemini-3.5-flash-lite"
+# Check environment variable first (.env or system env), fallback to Streamlit secrets (Streamlit Cloud)
+try:
+    import streamlit as st
+    _st_secret = st.secrets.get("GEMINI_API_KEY", "") if hasattr(st, "secrets") else ""
+except Exception:
+    _st_secret = ""
+
+GEMINI_API_KEY     = os.getenv("GEMINI_API_KEY") or _st_secret or ""
+GEMINI_MODEL       = "gemini-3.5-flash-lite"
 EMBEDDING_MODEL   = "models/gemini-embedding-001"
 GEMINI_TEMPERATURE = 0.2   # Low temperature for factual, grounded answers
 
